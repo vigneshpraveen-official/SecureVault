@@ -1,0 +1,1 @@
+{"success":true,"message":"Vault retrieved successfully","data":[{"id":4,"title":"Chase Bank","username":"dave.chase","websiteUrl":"https://chase.com","notes":"","category":"BANKING","favorite":false,"createdAt":"2026-08-10T19:53:29.300255Z","updatedAt":"2026-08-10T19:53:29.300280Z"}],"errorCode":null,"errors":null,"timestamp":"2026-08-10T19:53:41.952527614Z"}

@@ -9,7 +9,7 @@ session log; this file is the static map both `progress.md` and every AI agent p
 forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching entry in
 `docs/progress.md`'s SESSION LOG.
 
-**Progress: 3 / 53 sessions complete.**
+**Progress: 9 / 53 sessions complete. Milestone 1 complete.**
 
 ---
 
@@ -25,17 +25,17 @@ forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching 
   Note: ERD PNG export is a manual step at dbdiagram.io (see `docs/db-design.md`) — DBML source is committed, image not yet exported.
 
 ### Phase 1 — Milestone 1: auth + vault core
-- [ ] **S1.1** — User entity + registration + BCrypt (M-06, M-07)
+- [x] **S1.1** — User entity + registration + BCrypt (M-06, M-07) — *2026-08-11*
   Acceptance: Postman creates a user; row visible in `users`; duplicate email → 409; two identical passwords → different hashes (screenshot).
-- [ ] **S1.2** — Spring Security + JWT + login (M-15..M-19)
+- [x] **S1.2** — Spring Security + JWT + login (M-15..M-19) — *2026-08-11*
   Acceptance: Login returns JWT; `/api/vault/**` without token → 401; with token → 200; expired token → 401.
-- [ ] **S1.3** — Credential entity + AES-GCM + create/read (M-08, M-09, M-10)
+- [x] **S1.3** — Credential entity + AES-GCM + create/read (M-08, M-09, M-10) — *2026-08-11*
   Acceptance: DB column holds ciphertext only; GET returns the original password; multiple credentials per user.
-- [ ] **S1.4** — Update, delete, ownership verification (M-11, M-12, M-13)
+- [x] **S1.4** — Update, delete, ownership verification (M-11, M-12, M-13) — *2026-08-11*
   Acceptance: Password re-encrypted only when changed; deleting one row leaves others intact; other user's credential → 403.
-- [ ] **S1.5** — Category enum, search, filter, indexes (M-20..M-23)
+- [x] **S1.5** — Category enum, search, filter, indexes (M-20..M-23) — *2026-08-11*
   Acceptance: Partial-title search works; category filter works; empty result → empty list not error; index rationale written.
-- [ ] **S1.6** — Milestone 1 evidence pack (M-14)
+- [x] **S1.6** — Milestone 1 evidence pack (M-14) — *2026-08-11*
   Acceptance: Every checklist line ticked with a screenshot or Postman run in `docs/evidence/milestone-1/`.
 
 ---

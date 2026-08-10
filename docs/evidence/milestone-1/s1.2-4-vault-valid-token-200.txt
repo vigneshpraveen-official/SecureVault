@@ -1,0 +1,15 @@
+HTTP/1.1 200 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 0
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Content-Type: application/json
+Transfer-Encoding: chunked
+Date: Mon, 10 Aug 2026 19:30:28 GMT
+
+{"success":true,"message":"Vault stub — replaced in S1.3","data":[],"errorCode":null,"errors":null,"timestamp":"2026-08-10T19:30:28.959175401Z"}

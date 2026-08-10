@@ -1,0 +1,1 @@
+{"success":true,"message":"User registered successfully","data":{"id":1,"fullName":"Alice Example","email":"alice@example.com","role":"USER","createdAt":"2026-08-10T19:19:35.697497Z"},"errorCode":null,"errors":null,"timestamp":"2026-08-10T19:19:35.721446882Z"}

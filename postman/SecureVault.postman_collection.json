@@ -14,10 +14,1248 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/actuator/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["actuator", "health"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
             }
-          }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/actuator/health",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "actuator",
+                    "health"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"status\":\"UP\"}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST /api/auth/register - success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Alice Example\",\n  \"email\": \"alice@example.com\",\n  \"password\": \"CorrectHorseBattery1!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "201 example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fullName\": \"Alice Example\",\n  \"email\": \"alice@example.com\",\n  \"password\": \"CorrectHorseBattery1!\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/register",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "register"
+                  ]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"User registered successfully\",\"data\":{\"id\":1,\"fullName\":\"Alice Example\",\"email\":\"alice@example.com\",\"role\":\"USER\",\"createdAt\":\"2026-08-10T19:19:35.697497Z\"},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-10T19:19:35.721446882Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "POST /api/auth/register - duplicate email (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Alice Again\",\n  \"email\": \"alice@example.com\",\n  \"password\": \"AnotherPassword2!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "409 example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fullName\": \"Alice Again\",\n  \"email\": \"alice@example.com\",\n  \"password\": \"AnotherPassword2!\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/register",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "register"
+                  ]
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"Email already registered: alice@example.com\",\"data\":null,\"errorCode\":\"DUPLICATE_EMAIL\",\"errors\":null,\"timestamp\":\"2026-08-10T19:19:35.839136885Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "POST /api/auth/login - success",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var body = pm.response.json();",
+                  "if (body.data && body.data.accessToken) { pm.collectionVariables.set('accessToken', body.data.accessToken); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@example.com\",\n  \"password\": \"CorrectHorseBattery1!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"alice@example.com\",\n  \"password\": \"CorrectHorseBattery1!\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "login"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Login successful\",\"data\":{\"accessToken\":\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJjYXJvbDJAZXhhbXBsZS5jb20iLCJpYXQiOjE3ODYzOTAyMjgsImV4cCI6MTc4NjM5MTEyOH0.3_4OHZa3bwT3OCxLnMR39K9iADCXBBWIZhIlVGQ_Tt0\",\"userId\":4,\"fullName\":\"Carol Example\",\"email\":\"carol2@example.com\",\"role\":\"USER\"},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-10T19:30:28.863500740Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "POST /api/auth/login - wrong password (401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@example.com\",\n  \"password\": \"WrongPassword!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "401 example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"alice@example.com\",\n  \"password\": \"WrongPassword!\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "login"
+                  ]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"Invalid email or password\",\"data\":null,\"errorCode\":\"INVALID_CREDENTIALS\",\"errors\":null,\"timestamp\":\"2026-08-10T19:30:29.081770047Z\"}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Vault",
+      "item": [
+        {
+          "name": "GET /api/vault - no token (401)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/vault",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "401 example",
+              "originalRequest": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault"
+                  ]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault - valid token (200)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Vault retrieved successfully\",\"data\":[{\"id\":1,\"title\":\"GitHub\",\"username\":\"dave.gh\",\"websiteUrl\":\"https://github.com\",\"notes\":\"work account\",\"category\":\"OTHER\",\"favorite\":false,\"createdAt\":\"2026-08-10T19:38:02.802780Z\",\"updatedAt\":\"2026-08-10T19:38:02.802794Z\"},{\"id\":2,\"title\":\"Netflix\",\"username\":\"dave.n\",\"websiteUrl\":\"https://netflix.com\",\"notes\":\"\",\"category\":\"OTHER\",\"favorite\":false,\"createdAt\":\"2026-08-10T19:38:02.836616Z\",\"updatedAt\":\"2026-08-10T19:38:02.836631Z\"}],\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-10T19:38:15.603532659Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault - tampered token (401)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}tampered"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "401 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}tampered"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault"
+                  ]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "name": "POST /api/vault - create credential",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var body = pm.response.json();",
+                  "if (body.data && body.data.id) { pm.collectionVariables.set('credentialId', body.data.id); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"GitHub\",\n  \"username\": \"alice.gh\",\n  \"password\": \"GhSecret1!\",\n  \"websiteUrl\": \"https://github.com\",\n  \"notes\": \"work account\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vault",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "201 example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"GitHub\",\n  \"username\": \"alice.gh\",\n  \"password\": \"GhSecret1!\",\n  \"websiteUrl\": \"https://github.com\",\n  \"notes\": \"work account\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault"
+                  ]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Credential created successfully\",\"data\":{\"id\":1,\"title\":\"GitHub\",\"username\":\"dave.gh\",\"websiteUrl\":\"https://github.com\",\"notes\":\"work account\",\"category\":\"OTHER\",\"favorite\":false,\"createdAt\":\"2026-08-10T19:38:02.802780Z\",\"updatedAt\":\"2026-08-10T19:38:02.802794Z\"},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-10T19:38:02.812334148Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault/{id} - decrypted reveal",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{credentialId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{credentialId}}"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{credentialId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{credentialId}}"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Credential retrieved successfully\",\"data\":{\"id\":1,\"title\":\"GitHub\",\"username\":\"dave.gh\",\"password\":\"GhSecret1!\",\"websiteUrl\":\"https://github.com\",\"notes\":\"work account\",\"category\":\"OTHER\",\"favorite\":false,\"createdAt\":\"2026-08-10T19:38:02.802780Z\",\"updatedAt\":\"2026-08-10T19:38:02.802794Z\"},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-10T19:38:15.577010842Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault/{id} - other user's credential (403)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{otherUsersCredentialId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{otherUsersCredentialId}}"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "403 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{otherUsersCredentialId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{otherUsersCredentialId}}"
+                  ]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"You do not have access to this credential\",\"data\":null,\"errorCode\":\"ACCESS_DENIED\",\"errors\":null,\"timestamp\":\"2026-08-10T19:38:15.628488143Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "PUT /api/vault/{id} - update title only",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"GitHub (work)\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{credentialId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{credentialId}}"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"GitHub (work)\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{credentialId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{credentialId}}"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Credential updated successfully\",\"data\":{\"id\":1,\"title\":\"GitHub (work)\",\"username\":\"dave.gh\",\"websiteUrl\":\"https://github.com\",\"notes\":\"work account\",\"category\":\"OTHER\",\"favorite\":false,\"createdAt\":\"2026-08-10T19:38:02.802780Z\",\"updatedAt\":\"2026-08-10T19:38:02.802794Z\"},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-10T19:45:02.808149449Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "PUT /api/vault/{id} - update password",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"NewGhSecret9!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{credentialId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{credentialId}}"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"password\": \"NewGhSecret9!\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{credentialId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{credentialId}}"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Credential updated successfully\",\"data\":{\"id\":1,\"title\":\"GitHub (work)\",\"username\":\"dave.gh\",\"websiteUrl\":\"https://github.com\",\"notes\":\"work account\",\"category\":\"OTHER\",\"favorite\":false,\"createdAt\":\"2026-08-10T19:38:02.802780Z\",\"updatedAt\":\"2026-08-10T19:45:02.800107Z\"},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-10T19:46:44.002141007Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "PUT /api/vault/{id} - other user's credential (403)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"HACKED\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{otherUsersCredentialId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{otherUsersCredentialId}}"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "403 example",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"HACKED\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{otherUsersCredentialId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{otherUsersCredentialId}}"
+                  ]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"You do not have access to this credential\",\"data\":null,\"errorCode\":\"ACCESS_DENIED\",\"errors\":null,\"timestamp\":\"2026-08-10T19:47:25.237262589Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/vault/{id} - success (204)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{credentialId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{credentialId}}"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "204 example",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{credentialId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{credentialId}}"
+                  ]
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault/search - partial match",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/search?q=git",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "git"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/search?q=git",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "search"
+                  ],
+                  "query": [
+                    {
+                      "key": "q",
+                      "value": "git"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Search results\",\"data\":[{\"id\":1,\"title\":\"GitHub (work)\",\"username\":\"dave.gh\",\"websiteUrl\":\"https://github.com\",\"notes\":\"work account\",\"category\":\"OTHER\",\"favorite\":false,\"createdAt\":\"2026-08-10T19:38:02.802780Z\",\"updatedAt\":\"2026-08-10T19:46:43.974910Z\"},{\"id\":5,\"title\":\"GitLab\",\"username\":\"dave.gl\",\"websiteUrl\":\"https://gitlab.com\",\"notes\":\"\",\"category\":\"WORK\",\"favorite\":false,\"createdAt\":\"2026-08-10T19:53:29.346439Z\",\"updatedAt\":\"2026-08-10T19:53:29.346450Z\"}],\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-10T19:53:41.833061057Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault/search - no match (200 empty)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/search?q=zzz-no-match",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "zzz-no-match"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/search?q=zzz-no-match",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "search"
+                  ],
+                  "query": [
+                    {
+                      "key": "q",
+                      "value": "zzz-no-match"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Search results\",\"data\":[],\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-10T19:53:41.899480810Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault?category= - filter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault?category=BANKING",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault"
+              ],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "BANKING"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault?category=BANKING",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault"
+                  ],
+                  "query": [
+                    {
+                      "key": "category",
+                      "value": "BANKING"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Vault retrieved successfully\",\"data\":[{\"id\":4,\"title\":\"Chase Bank\",\"username\":\"dave.chase\",\"websiteUrl\":\"https://chase.com\",\"notes\":\"\",\"category\":\"BANKING\",\"favorite\":false,\"createdAt\":\"2026-08-10T19:53:29.300255Z\",\"updatedAt\":\"2026-08-10T19:53:29.300280Z\"}],\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-10T19:53:41.952527614Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/vault/{id} - other user's credential (403)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{otherUsersCredentialId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{otherUsersCredentialId}}"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "403 example",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{otherUsersCredentialId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{otherUsersCredentialId}}"
+                  ]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"You do not have access to this credential\",\"data\":null,\"errorCode\":\"ACCESS_DENIED\",\"errors\":null,\"timestamp\":\"2026-08-10T19:47:25.260650454Z\"}"
+            }
+          ]
         }
       ]
     }
@@ -26,6 +1264,18 @@
     {
       "key": "baseUrl",
       "value": "http://localhost:8080"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "credentialId",
+      "value": ""
+    },
+    {
+      "key": "otherUsersCredentialId",
+      "value": ""
     }
   ]
 }

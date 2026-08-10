@@ -1,0 +1,25 @@
+                                           Table "public.credentials"
+       Column       |           Type           | Collation | Nullable |                 Default                 
+--------------------+--------------------------+-----------+----------+-----------------------------------------
+ id                 | bigint                   |           | not null | nextval('credentials_id_seq'::regclass)
+ user_id            | bigint                   |           | not null | 
+ title              | character varying(150)   |           | not null | 
+ username           | character varying(150)   |           |          | 
+ encrypted_password | text                     |           | not null | 
+ website_url        | character varying(255)   |           |          | 
+ notes              | text                     |           |          | 
+ category           | character varying(30)    |           | not null | 
+ favorite           | boolean                  |           | not null | false
+ strength_score     | smallint                 |           |          | 
+ deleted            | boolean                  |           | not null | false
+ deleted_at         | timestamp with time zone |           |          | 
+ created_at         | timestamp with time zone |           | not null | now()
+ updated_at         | timestamp with time zone |           | not null | now()
+Indexes:
+    "credentials_pkey" PRIMARY KEY, btree (id)
+    "idx_credentials_category" btree (category)
+    "idx_credentials_title" btree (title)
+    "idx_credentials_user_id_deleted" btree (user_id, deleted)
+Foreign-key constraints:
+    "fk_credentials_user" FOREIGN KEY (user_id) REFERENCES users(id)
+

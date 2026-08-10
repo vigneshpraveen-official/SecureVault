@@ -133,6 +133,16 @@ record (`docs/architecture.md`).
     search, and category filter — all of them, since every one of those queries scopes by
     owner and (from Phase 4) excludes soft-deleted rows.
 
+**Honest caveat added in S1.5:** `idx_credentials_title` is a standard btree index, which only
+accelerates *prefix* matches (`LIKE 'term%'`). S1.5's search (M-21) is a *contains* match
+(`LIKE '%term%'`, case-insensitive, across `title`/`username`/`websiteUrl`) so it can't use a
+leading-wildcard lookup on this index — Postgres falls back to a scan filtered by `user_id`
+first (via `idx_credentials_user_id_deleted`), which is fine at this project's data volume but
+won't scale indefinitely. A trigram index (`pg_trgm` extension, `gin_trgm_ops`) would make
+substring search itself index-accelerated; not added now since it's a new extension/dependency
+decision out of this session's scope — flagged here for a future session if search performance
+ever becomes a real bottleneck.
+
 ---
 
 ## Relationship summary

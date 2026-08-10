@@ -1,0 +1,16 @@
+HTTP/1.1 400 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 0
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Content-Type: application/json
+Transfer-Encoding: chunked
+Date: Mon, 10 Aug 2026 19:59:09 GMT
+Connection: close
+
+{"success":false,"message":"Validation failed","data":null,"errorCode":"VALIDATION_FAILED","errors":[{"field":"email","message":"must be a well-formed email address"},{"field":"fullName","message":"must not be blank"},{"field":"password","message":"must be at least 8 characters"}],"timestamp":"2026-08-10T19:59:09.459829798Z"}

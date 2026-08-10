@@ -1,0 +1,6 @@
+ id | user_id |  title  |                      encrypted_password                       
+----+---------+---------+---------------------------------------------------------------
+  1 |       5 | GitHub  | cshOidNxTtj2pgcU:sZhkoVyLKwEpqx3QrJZDM7kzBSPiPdk59vY=
+  2 |       5 | Netflix | kIML2K4xPXU7XM73:poYxH7L7OzZjZwGTw/Hh+jdhukG2/pZ3YzuUBthgTQ==
+(2 rows)
+

@@ -1,0 +1,1 @@
+{"success":true,"message":"Login successful","data":{"accessToken":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJjYXJvbDJAZXhhbXBsZS5jb20iLCJpYXQiOjE3ODYzOTAyMjgsImV4cCI6MTc4NjM5MTEyOH0.3_4OHZa3bwT3OCxLnMR39K9iADCXBBWIZhIlVGQ_Tt0","userId":4,"fullName":"Carol Example","email":"carol2@example.com","role":"USER"},"errorCode":null,"errors":null,"timestamp":"2026-08-10T19:30:28.863500740Z"}

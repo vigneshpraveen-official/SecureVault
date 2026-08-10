@@ -53,3 +53,75 @@ Format: Date · Status · Context · Decision · Alternatives · Consequences.
 **Decision:** `spotless-maven-plugin` bound to the `verify` Maven phase, using Google Java Format in **AOSP style** (4-space indent) so it matches the repo's `.editorconfig`. `mvn spotless:apply` formats; `mvn verify` fails the build on drift.
 **Alternatives:** `fmt-maven-plugin` (rejected — smaller community, fewer style options); default Google Java Format (2-space) (rejected — conflicts with the repo's 4-space `.editorconfig` and master §9's Java conventions).
 **Consequences:** Every agent must run `mvn spotless:apply` before committing Java changes, or let `mvn verify` catch it. No agent may hand-argue about brace placement or import order in review.
+
+### ADR-008 — Commit cadence: one commit per phase, not per session
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** Master §7.4/§14 step 6 specify one commit per session. The developer has instead
+asked for commits only at phase completion, not after every session or sub-phase change,
+to keep the git history focused on phase-sized units of work rather than many small
+scaffolding/doc commits.
+**Decision:** Sessions within a phase are still executed individually (plan stated, work
+done, `docs/progress.md`/`docs/roadmap.md` updated live) but are **not** committed
+individually. One commit happens at the end of the phase, covering every session in it.
+Work stays on `main` — no phase branches are introduced (would add squash-merge overhead
+not requested, and conflicts with the already-simplified fork-only workflow in ADR-006).
+Commit approval is still asked for explicitly every time a commit does happen — this
+changes *frequency*, not the requirement to ask.
+**Alternatives:** Master §7.2's literal `phase/<n>-<slug>` branch + squash-merge model
+(rejected for now — adds branch management overhead disproportionate to a solo-developer
+fork-only workflow; revisit if that changes); keep per-session commits (rejected — developer's
+explicit preference is a phase-sized history).
+**Consequences:** `docs/progress.md`'s SESSION LOG still gets one entry per session (for
+traceability), but several entries may land in a single commit. If a phase is interrupted
+mid-way, uncommitted work for completed sessions within that phase exists only in the
+working tree until the phase finishes or the developer asks for an interim commit.
+
+### ADR-009 — jjwt 0.12.7 for JWT issuance/validation
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** D-08 locks "jjwt 0.12.x (HS256)" for JWT. No JWT dependency existed yet (S1.1's
+`SecurityConfig` was a permit-all placeholder). Unlike the Spring Boot situation (ADR-001),
+0.12.x is not EOL — it's simply superseded by a newer 0.13.0 that D-08 doesn't ask for.
+**Decision:** Add `io.jsonwebtoken:jjwt-api`, `jjwt-impl` (runtime), `jjwt-jackson` (runtime),
+all pinned to **0.12.7** (latest 0.12.x patch, verified via Maven Central). Used exclusively
+via the 0.12 API style (`Jwts.builder().subject(...).signWith(SecretKey)`,
+`Jwts.parser().verifyWith(...)`) — the deprecated 0.9-era API never appears in this codebase.
+**Alternatives:** jjwt 0.13.0 (rejected — D-08 explicitly asks for the 0.12.x line; no
+functional need to jump to 0.13 yet); Spring Security's own OAuth2 resource server JWT
+support (rejected — heavier setup for a project issuing its own tokens rather than
+validating a third-party IdP's).
+**Consequences:** Any future session touching JWT must stay on the 0.12 builder/parser API.
+If the project later needs 0.13+, that requires its own ADR.
+
+### ADR-010 — AesEncryptionService implementation details (fail-fast key validation)
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** ADR-004 already locked the algorithm and storage format (`base64(iv):base64(ciphertext)`)
+ahead of implementation. This session (S1.3) implements it — the P1.3 prompt asks for an ADR
+on the ciphertext format, which ADR-004 already covers, so this entry only records the
+implementation-specific decisions ADR-004 didn't: exact tag length and key-validation behavior.
+**Decision:** `Cipher.getInstance("AES/GCM/NoPadding")`, 128-bit GCM auth tag, `SecureRandom`
+for the 12-byte IV (matches D-05 exactly). `AES_SECRET_KEY` is decoded and length-checked in
+the service's constructor — Spring fails the whole application context at startup with a
+clear message if the key is missing, not valid base64, or doesn't decode to exactly 32 bytes.
+**Alternatives:** Validating lazily on first `encrypt()`/`decrypt()` call (rejected — a bad key
+would only surface on the first real request instead of at boot, the opposite of "fail fast");
+a fixed/zero IV (rejected outright — defeats GCM's entire security property, this is the
+insecure pattern D-05's rationale explicitly warns against).
+**Consequences:** The app will not start at all with a missing/malformed `AES_SECRET_KEY` —
+this is intentional per master §13 ("no defaults for ... AES_SECRET_KEY").
+
+### ADR-011 — Category persisted as `EnumType.STRING`, never `ORDINAL`
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** JPA can persist an enum as its declared name (`STRING`) or its declaration-order
+integer position (`ORDINAL`). `Credential.category` (S1.3/S1.5) needed one chosen explicitly.
+**Decision:** `@Enumerated(EnumType.STRING)`. The DB column is `VARCHAR(30)` (`V1__init.sql`),
+which is also the only type-compatible choice — `ORDINAL` would need an `INT` column.
+**Alternatives:** `ORDINAL` (rejected — it's a silent-corruption risk, not just a style
+preference: if `Category`'s declared order ever changes — a new value inserted in the middle,
+a reorder for readability — every already-stored integer silently points at a *different*
+enum constant. There's no compile error and no runtime error; existing rows just start
+reporting the wrong category. `STRING` fails loudly instead: renaming a constant breaks
+lookups visibly rather than corrupting data invisibly).
+**Consequences:** Renaming a `Category` constant later requires an explicit data migration
+(`UPDATE credentials SET category = 'NEW_NAME' WHERE category = 'OLD_NAME'`) — a deliberate,
+visible action, which is exactly the tradeoff this ADR accepts in exchange for never having
+silent data corruption from a reordered enum.

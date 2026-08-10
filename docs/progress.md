@@ -1,19 +1,20 @@
 # SecureVault — Progress Log
 
 ## CURRENT STATE
-- Phase: 0 — Workspace & foundations (complete after this session)
-- Last session: S0.3 (schema design, ERD, Flyway baseline)
-- Build: green | Tests: 0 | Migrations applied: V0, V1 (users, credentials)
+- Phase: 1 — Milestone 1: auth + vault core (**complete**)
+- Last session: S1.6 (Milestone 1 evidence pack)
+- Build: green | Tests: 3 passing (`AesEncryptionServiceTest`) | Migrations applied: V0, V1 (users, credentials)
 - Working branch: main (personal fork repo only; no central-repo remote configured yet — see ADR-006)
-- Next session: S1.1 — User entity + registration + BCrypt (M-06, M-07)
+- Next session: S2.1 — DTO layer + MapStruct mappers (M-24, M-28)
 - Open blockers: ERD PNG export is a manual dbdiagram.io step, not yet done by the developer (DBML source is committed)
-- Full phase/milestone tracker: `docs/roadmap.md` (3/53 sessions done)
+- Commit cadence: **one commit per phase**, not per session (ADR-008, developer's explicit preference from Phase 1 on) — Phase 1's six sessions land in a single commit
+- Full phase/milestone tracker: `docs/roadmap.md` (9/53 sessions done, **Milestone 1 complete**)
 
 ## NEXT UP
-1. S1.1 — User entity + registration + BCrypt (M-06, M-07)
-2. S1.2 — Spring Security + JWT + login (M-15..M-19)
-3. S1.3 — Credential entity + AES-GCM + create/read (M-08, M-09, M-10)
-4. S1.4 — Update, delete, ownership verification (M-11, M-12, M-13)
+1. S2.1 — DTO layer + MapStruct mappers (M-24, M-28)
+2. S2.2 — Bean Validation across all requests (M-25)
+3. S2.3 — Custom exceptions + `@ControllerAdvice` + `ApiResponse` (M-26, M-27)
+4. S2.4 — Sweep + Postman regression
 
 ---
 ## SESSION LOG
@@ -89,3 +90,122 @@ visible at a glance across daily/ad-hoc sessions and across AI tools.
 - `\dt` → `users`, `credentials`, `flyway_schema_history`. `\d credentials` / `\d users` → every column, the FK, and all three indexes present exactly as specified in `V1__init.sql`.
 **Blockers:** ERD PNG export from dbdiagram.io is a manual step the developer still needs to do (I can't reach that web UI) — DBML source is committed and ready to paste in.
 **Commit:** `feat(db): add Phase 1 schema (users, credentials) with Flyway V1 and full ERD docs`
+
+### S1.1 — 2026-08-11 — User entity, registration, BCrypt
+**Mentor tasks:** M-06, M-07
+**Done:**
+- `User` entity (`user/User.java`) matching `V1__init.sql`'s `users` table exactly; `Role` enum (`USER`/`TEAM_MEMBER`/`ADMIN`, default `USER`); timestamps via Hibernate `@CreationTimestamp`/`@UpdateTimestamp` (not full JPA auditing — simpler for two columns, no `createdBy`/`modifiedBy` need yet).
+- `UserRepository` (`existsByEmail`, `findByEmail`), `UserService`/`UserServiceImpl.register(...)` — rejects duplicate email via `DuplicateEmailException` (plain exception, formalized in S2.3), hashes with `BCryptPasswordEncoder(10)`.
+- `UserRegisterRequest` / `UserResponse` DTOs — response never carries `passwordHash`.
+- `common/response/ApiResponse<T>` — the real envelope (§9/D-11), used from this session on.
+- `UserController` — `POST /api/auth/register`, plus a local `@ExceptionHandler` for `DuplicateEmailException` → 409 (`DUPLICATE_EMAIL`). Full `@ControllerAdvice` arrives in S2.3.
+- `config/SecurityConfig` — `PasswordEncoder` bean + a permit-all filter chain with a `TODO(S1.2)` marking where the real JWT chain replaces it.
+- Added `Auth` folder to `postman/SecureVault.postman_collection.json` (register success + duplicate-email requests); `docs/api-contract.md` updated.
+**Files:** `user/*`, `user/dto/*`, `common/response/ApiResponse.java`, `config/SecurityConfig.java`, `postman/SecureVault.postman_collection.json`, `docs/api-contract.md`, `docs/evidence/milestone-1/s1.1-*`.
+**Decisions:** none new beyond the timestamp-strategy note above (not ADR-worthy on its own — matches the pattern already set for `credentials` in ADR-004).
+**Verified (evidence in `docs/evidence/milestone-1/`, curl used in place of a Postman GUI — Postman requests are in the collection for manual re-run):**
+- `POST /api/auth/register` (Alice) → 201, body has no `passwordHash` (`s1.1-register-success-alice.json`).
+- `POST /api/auth/register` (Bob, same password as Alice) → 201 (`s1.1-register-success-bob.json`).
+- `POST /api/auth/register` (Alice's email again) → 409, `errorCode: DUPLICATE_EMAIL` (`s1.1-duplicate-email-409.txt`).
+- `SELECT id, email, password_hash, role FROM users;` → both rows `$2a$10$...`, and **the two hashes for the identical password are different** — BCrypt embeds a fresh random salt in every hash it generates, so equal input never produces equal output (`s1.1-db-password-hashes.txt`).
+**Blockers:** none.
+**Commit:** _batched — see Phase 1 close, ADR-008._
+
+### S1.2 — 2026-08-11 — Spring Security, JWT, login
+**Mentor tasks:** M-15, M-16, M-17, M-18, M-19
+**Done:**
+- `security/JwtService` — jjwt **0.12.7** (new dependency, ADR-009), `generateAccessToken`, `extractUsername`, `isTokenValid`, `isTokenExpired`. Secret/expiry from `app.security.jwt-secret`/`jwt-access-expiry-ms` (env-backed, no defaults) — never hardcoded.
+- `security/JwtAuthenticationFilter` (`OncePerRequestFilter`) — reads `Authorization: Bearer `, validates, sets `SecurityContext`; malformed/expired/tampered tokens *and* tokens for a since-deleted user are caught and result in an unauthenticated request, never a 500.
+- `security/CustomUserDetailsService` (loads by email) + `security/UserPrincipal` (wraps `User`, role → `ROLE_<ROLE>` authority).
+- `config/SecurityConfig` rewritten (replaces S1.1's permit-all placeholder): CSRF/form-login/httpBasic disabled, `SessionCreationPolicy.STATELESS`, `permitAll` on `/api/auth/**` + `/actuator/health` + swagger paths, `authenticated()` everywhere else, `JwtAuthenticationFilter` registered before `UsernamePasswordAuthenticationFilter`, CORS driven by `APP_CORS_ORIGINS`. **Bug caught during verification:** Spring Security's default `AuthenticationEntryPoint` returns 403 for unauthenticated requests once form-login/httpBasic are disabled — added an explicit entry point returning 401, since M-19 requires 401, not 403.
+- `security/AuthController` — `POST /api/auth/login`, `AuthenticationManager` + BCrypt verification via `DaoAuthenticationProvider`, generic `INVALID_CREDENTIALS` message on any failure (never reveals which field was wrong).
+- `vault/VaultController` — temporary stub (`GET /api/vault` → empty list), authenticated-only, exists solely to prove the filter chain; replaced by the real endpoint in S1.3.
+- Postman collection: `Auth` folder gets login (success + wrong-password) requests with a test script that captures `accessToken` into a collection variable; new `Vault` folder (no-token / valid-token / tampered-token). `docs/api-contract.md` updated.
+**Files:** `security/*`, `security/dto/*`, `config/SecurityConfig.java`, `vault/VaultController.java`, `backend/pom.xml`, `docs/decisions.md` (ADR-009), `postman/SecureVault.postman_collection.json`, `docs/api-contract.md`, `docs/evidence/milestone-1/s1.2-*`.
+**Decisions:** ADR-009 (jjwt 0.12.7 dependency). SecurityConfig stays in `config/` (per master §8's directory tree) even though the P1.2 prompt text groups it under "Implement in com.securevault.security" — master's canonical layout wins over session-prompt phrasing.
+**Verified (evidence in `docs/evidence/milestone-1/`, curl in place of a Postman GUI):**
+- Register → 201 (`s1.2-1-register-success.json`).
+- Login → 200 with a JWT (`s1.2-2-login-jwt.json`).
+- `GET /api/vault` no token → **401** (`s1.2-3-vault-no-token-401.txt`).
+- `GET /api/vault` valid token → **200**, empty list (`s1.2-4-vault-valid-token-200.txt`).
+- `GET /api/vault` tampered token (valid JWT + trailing garbage) → **401** (`s1.2-5-vault-tampered-token-401.txt`).
+- Bonus: login with wrong password → 401, generic message, no field disclosed (`s1.2-6-login-wrong-password-401.txt`).
+**Blockers:** none.
+**Commit:** _batched — see Phase 1 close, ADR-008._
+
+### S1.3 — 2026-08-11 — Credential entity, AES-GCM, create/read
+**Mentor tasks:** M-08, M-09, M-10
+**Done:**
+- `security/crypto/AesEncryptionService` — AES-256-GCM (`AES/GCM/NoPadding`), 128-bit tag, fresh `SecureRandom` 12-byte IV per call, `encrypt`/`decrypt` in the `base64(iv):base64(ciphertext)` format (ADR-004). Constructor decodes and length-checks `AES_SECRET_KEY`, failing the whole app context at startup on a missing/malformed/wrong-length key (ADR-010). Unit test proves two encryptions of the same plaintext differ and both decrypt correctly.
+- `vault/Credential` entity + `vault/Category` enum (7 values, default `OTHER` — filter API is S1.5). Matches `V1__init.sql` exactly; no new migration needed.
+- `vault/CredentialRepository`, `vault/CredentialService`/`Impl` — owner resolved from the JWT principal (never the request body), create encrypts before persisting, get-by-id checks ownership before decrypting (404 if missing, 403 if not the owner), list never decrypts.
+- `vault/CredentialController` — `POST /api/vault`, `GET /api/vault/{id}`, `GET /api/vault` — **replaces** S1.2's stub `VaultController` (deleted).
+- `CredentialResponse` (no password, create+list) vs `CredentialDetailResponse` (decrypted password, single-reveal only) — two distinct DTOs so the "never in a list" rule is a type-level guarantee, not a runtime check.
+- Postman `Vault` folder gets create + reveal + cross-user-403 requests; `docs/api-contract.md` updated.
+**Files:** `security/crypto/AesEncryptionService.java` (+test), `vault/Credential.java`, `vault/Category.java`, `vault/CredentialRepository.java`, `vault/CredentialService.java`, `vault/CredentialServiceImpl.java`, `vault/CredentialController.java`, `vault/dto/*`, `vault/CredentialNotFoundException.java`, `vault/CredentialAccessDeniedException.java` (deleted `vault/VaultController.java`), `docs/decisions.md` (ADR-010), `postman/SecureVault.postman_collection.json`, `docs/api-contract.md`, `docs/evidence/milestone-1/s1.3-*`.
+**Decisions:** ADR-010 (AES implementation details — see above). 404 vs 403 split: nonexistent ID → `CREDENTIAL_NOT_FOUND` (404), exists but wrong owner → `ACCESS_DENIED` (403) — matches master §12's ownership-check-first model and the distinct error codes already defined in §9.
+**Verified (evidence in `docs/evidence/milestone-1/`):**
+- `mvn test` → `AesEncryptionServiceTest` green (same plaintext → different ciphertext, both decrypt correctly; wrong key length fails fast).
+- Two credentials created for one user (Dave) → 201 each, no `password` field (`s1.3-1-*`, `s1.3-2-*`).
+- `GET /api/vault/1` (owner) → 200, `password` field matches the original plaintext exactly (`s1.3-3-*`).
+- `GET /api/vault` (owner) → both credentials, neither has a `password` field (`s1.3-4-*`).
+- `GET /api/vault/1` as a second user (Erin, not the owner) → **403** (`s1.3-5-*`).
+- `SELECT ... FROM credentials` → `encrypted_password` column holds `base64(iv):base64(ciphertext)` for both rows, no plaintext anywhere in the database (`s1.3-6-*`).
+**Blockers:** none.
+**Commit:** _batched — see Phase 1 close, ADR-008._
+
+### S1.4 — 2026-08-11 — Update, delete, ownership verification
+**Mentor tasks:** M-11, M-12, M-13
+**Done:**
+- `vault/dto/CredentialUpdateRequest` — every field optional; `null` means "leave unchanged" (title, username, websiteUrl, notes, category all follow this rule).
+- `CredentialServiceImpl.update(...)` — password re-encryption logic: **decrypt-and-compare**, not presence-based. If `password` is `null` → skip entirely. If present, decrypt the *current* stored ciphertext and compare the resulting plaintext to the incoming value; only re-encrypt (and only then does the stored ciphertext change) if they differ. Chosen over "treat any present value as a change" because GCM's random-IV-per-encryption (D-05) means ciphertext is never comparable directly — the only correct way to know whether the password *actually* changed is a plaintext-to-plaintext comparison, which requires decrypting the existing value first.
+- `CredentialServiceImpl.delete(...)` — **hard delete for now**, explicit code comment + this log entry marking it as an intentional simplification, not an oversight — soft delete (`deleted`/`deletedAt`) replaces this in S4.3 (M-37..M-39).
+- Ownership check reused, not duplicated: `getByIdForUser`, `update`, and `delete` all go through the same private `loadOwned(id, userId)` — 404 if the row doesn't exist, 403 if it exists but isn't the caller's. No endpoint accepts a `userId` from the client; it always comes from `@AuthenticationPrincipal`.
+- `CredentialController` — `PUT /api/vault/{id}`, `DELETE /api/vault/{id}` (204, no body — HTTP forbids a body on 204, so it's the one endpoint shape exempt from the `ApiResponse` envelope).
+- Postman `Vault` folder gets update (title-only, password, cross-user-403) and delete (success, cross-user-403) requests; `docs/api-contract.md` updated.
+**Files:** `vault/dto/CredentialUpdateRequest.java`, `vault/CredentialService.java`, `vault/CredentialServiceImpl.java`, `vault/CredentialController.java`, `postman/SecureVault.postman_collection.json`, `docs/api-contract.md`, `docs/evidence/milestone-1/s1.4-*`.
+**Decisions:** none new — the decrypt-and-compare choice is a session-scoped implementation detail explained above and in the code comment, not a locked-decision-level ADR.
+**Verified (evidence in `docs/evidence/milestone-1/`):**
+- Update title only → DB `encrypted_password` for the row is **byte-for-byte identical** before/after (`s1.4-1-*`, `s1.4-3-*`).
+- Update password → DB ciphertext **changes**, and `GET /api/vault/{id}` decrypts to the new plaintext exactly (`s1.4-4-*`, `s1.4-5-*`, `s1.4-6-*`).
+- Delete 1 of Dave's 3 credentials → 204, remaining list shows exactly the other two, by id (`s1.4-7-*`, `s1.4-8-*`).
+- Erin (not the owner) attempts `PUT` and `DELETE` on Dave's credential → **403** both times, and a follow-up `GET` proves Dave's row is completely untouched (`s1.4-9-*`, `s1.4-10-*`, `s1.4-11-*`).
+**Blockers:** none.
+**Commit:** _batched — see Phase 1 close, ADR-008._
+
+### S1.5 — 2026-08-11 — Category, search, filtering, indexes
+**Mentor tasks:** M-20, M-21, M-22, M-23
+**Done:**
+- `Category` confirmed `@Enumerated(EnumType.STRING)` (already true since S1.3) — ADR-011 explains why `ORDINAL` is a silent-corruption risk. `CredentialCreateRequest` gains an optional `category` field; service defaults to `OTHER` when absent (required at the entity/DB level, sensible default at the API level).
+- `CredentialRepository.search(...)` — **`@Query` (JPQL)**, chosen over a Spring Data derived name: a derived name for "one AND (three OR'd, case-insensitive, partial-match fields)" would need `userId` repeated in every OR clause (the method-name grammar has no grouping) — long and easy to get subtly wrong. JPQL makes the boolean structure explicit and reviewable.
+- `GET /api/vault/search?q=` — case-insensitive partial match across `title`/`username`/`websiteUrl`, scoped to the authenticated user.
+- `GET /api/vault?category=` — `CredentialService.listForUser(userId, Category)` takes a **nullable** category (null = no filter). Chosen so S4.5's dynamic-filter rewrite (Specifications, D-12) can absorb more optional parameters later without changing this method's shape.
+- Indexes: **no new Flyway migration** — `idx_credentials_title`, `idx_credentials_category`, and the composite `idx_credentials_user_id_deleted` already existed from `V1__init.sql` (S0.3), so the P1.5 prompt's "if not already in V1" condition was false. Confirmed live via `\d credentials`.
+- `docs/db-design.md` → Index rationale gets an added honest caveat: `idx_credentials_title` is a plain btree, which only accelerates *prefix* matches — S1.5's search is a *contains* match (`LIKE '%term%'`), so this index doesn't actually serve it. A `pg_trgm` trigram index would, but adding a new Postgres extension is out of this session's scope — flagged for later if search performance ever matters at real data volume.
+**Files:** `vault/dto/CredentialCreateRequest.java`, `vault/CredentialRepository.java`, `vault/CredentialService.java`, `vault/CredentialServiceImpl.java`, `vault/CredentialController.java`, `docs/decisions.md` (ADR-011), `docs/db-design.md`, `postman/SecureVault.postman_collection.json`, `docs/api-contract.md`, `docs/evidence/milestone-1/s1.5-*`.
+**Decisions:** ADR-011 (`EnumType.STRING` over `ORDINAL`).
+**Verified (evidence in `docs/evidence/milestone-1/`):**
+- Create with explicit `category: BANKING` / `WORK` → persisted correctly (`s1.5-0-*`, `s1.5-1-*`).
+- Search `"git"` and `"GIT"` → identical results (both `GitHub (work)` and `GitLab`), proving case-insensitivity (`s1.5-2-*`, `s1.5-3-*`).
+- Search with no matches → **200**, empty list, not an error (`s1.5-4-*`).
+- Filter `category=BANKING` → only Chase Bank; `category=OTHER` → only the two OTHER-category rows (`s1.5-5-*`, `s1.5-6-*`).
+- Second user (Erin, zero credentials) searching/filtering → empty results, never Dave's rows (`s1.5-7-*`, `s1.5-8-*`).
+- `\d credentials` → all three required indexes present (`s1.5-9-*`).
+**Blockers:** none.
+**Commit:** _batched — see Phase 1 close, ADR-008._
+
+### S1.6 — 2026-08-11 — Milestone 1 evidence pack
+**Mentor task:** M-14 — the Milestone 1 completion checklist. No new features; this session proves what exists and fixes only real gaps found while proving it.
+**Done:**
+- Walked the mentor's checklist (Project / Authentication / Vault / Security / Quality) against the live app — full results in `docs/evidence/milestone-1/CHECKLIST.md`.
+- Found 3 honest GAPs, all in Quality, all fixed with the smallest correct change:
+  1. **No Bean Validation anywhere** — added `@Valid` + `@NotBlank`/`@Email`/`@Size` to `UserRegisterRequest`, `LoginRequest`, `CredentialCreateRequest` (full coverage stays S2.2/M-25).
+  2. **No catch-all exception handling** — added `common/exception/GlobalExceptionHandler` (basic `@RestControllerAdvice`: validation failures + a logged catch-all), leaving the existing per-controller business-exception handlers alone (consolidation is still S2.3/M-26).
+  3. **Postman collection had no environment file or saved example responses** — added `postman/SecureVault.postman_environment.json` and populated all 19 requests' example responses from this phase's real captured evidence (no fabricated examples).
+- Everything else on the checklist was already a true PASS — no other gaps found. Confirmed soft delete, MFA, sharing, etc. are correctly *not* expected yet (later phases per `docs/roadmap.md`), so their absence isn't a gap.
+- Demonstrated the full journey in one continuous run: register → login → create → DB shows ciphertext → decrypt → update (password) → delete → confirmed gone (404).
+**Files:** `user/dto/UserRegisterRequest.java`, `security/dto/LoginRequest.java`, `vault/dto/CredentialCreateRequest.java`, `user/UserController.java`, `security/AuthController.java`, `vault/CredentialController.java`, `common/exception/GlobalExceptionHandler.java` (new), `postman/SecureVault.postman_collection.json`, `postman/SecureVault.postman_environment.json` (new), `docs/evidence/milestone-1/CHECKLIST.md` (new) + `docs/evidence/milestone-1/s1.6-*`.
+**Decisions:** none new — the gap fixes are explicitly scoped as "minimum to make the checklist truthful," not early completion of S2.2/S2.3's real work.
+**Verified:** `mvn clean verify` green. Blank/malformed register request → 400 with per-field `VALIDATION_FAILED` messages instead of an unhandled exception or bad data reaching the DB (`s1.6-gap-fix-validation-400.txt`). Full continuous journey evidence in `s1.6-journey-*`.
+**Blockers:** none. **Milestone 1 is complete** — all checklist lines PASS.
+**Commit:** _batched — see Phase 1 close, ADR-008._

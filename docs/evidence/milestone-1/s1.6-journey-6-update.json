@@ -1,0 +1,1 @@
+{"success":true,"message":"Credential updated successfully","data":{"id":6,"title":"Demo Service","username":"m1demo.user","websiteUrl":"https://example.com","notes":"milestone-1 demo","category":"WORK","favorite":false,"createdAt":"2026-08-10T19:59:40.615440Z","updatedAt":"2026-08-10T19:59:40.615453Z"},"errorCode":null,"errors":null,"timestamp":"2026-08-10T19:59:56.635633610Z"}

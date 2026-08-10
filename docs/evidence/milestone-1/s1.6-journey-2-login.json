@@ -1,0 +1,1 @@
+{"success":true,"message":"Login successful","data":{"accessToken":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJtMWRlbW9AZXhhbXBsZS5jb20iLCJpYXQiOjE3ODYzOTE5ODAsImV4cCI6MTc4NjM5Mjg4MH0.b7nvgBo2J90HZvBDmPbLWAmfla4q9CxLPUinM9A8NBE","userId":7,"fullName":"Milestone One","email":"m1demo@example.com","role":"USER"},"errorCode":null,"errors":null,"timestamp":"2026-08-10T19:59:40.535595326Z"}
