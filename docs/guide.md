@@ -32,6 +32,25 @@ Optionally copy `backend/src/main/resources/application-local.yml.example` to
 `application-local.yml` in the same directory if you want to override the local datasource
 without touching `.env` (that file is gitignored).
 
+## Daily workflow
+
+Work happens in atomic sessions, done daily or whenever you have time — there's no fixed
+schedule, but each session should start and end clean:
+
+1. Open `docs/progress.md` → **CURRENT STATE** to see the last completed session and what's next.
+2. (Optional, for the big picture) Check `docs/roadmap.md` to see where that session sits
+   among all 53 sessions / 10 phases.
+3. Copy that session's prompt from `docs/securevault_prompts.md` and paste it as-is into
+   whichever AI tool you're using today (Claude Code, Gemini, ChatGPT, Antigravity — see
+   `docs/ai/CONTEXT.md`, which every tool reads first via its pointer file).
+4. Let the agent state its plan and wait for your approval before it writes anything
+   touching security, schema, or a locked decision.
+5. At the end, the agent runs Session Close (W-2): green build, `docs/progress.md` +
+   `docs/roadmap.md` + other affected docs updated, one commit proposed for your approval.
+
+This is what keeps multiple AI tools consistent across sessions — the state lives in these
+files, not in any one tool's memory.
+
 ## Daily run commands
 
 Start the Docker services (PostgreSQL, Redis, MailHog):

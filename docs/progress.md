@@ -7,6 +7,7 @@
 - Working branch: main (personal fork repo only; no central-repo remote configured yet — see ADR-006)
 - Next session: S0.2 — product decomposition + architecture reasoning (M-01, M-02)
 - Open blockers: none
+- Full phase/milestone tracker: `docs/roadmap.md` (1/53 sessions done)
 
 ## NEXT UP
 1. S0.2 — product decomposition + architecture reasoning writeups (M-01, M-02)
@@ -38,4 +39,10 @@
 - `mvn spring-boot:run` (profile `local`, env from `.env`) → started in 28.8s, Flyway applied V0, Hikari connected, `GET /actuator/health` → `{"status":"UP"}`.
 - `git check-ignore -v .env` → matched, confirmed not staged.
 **Blockers:** none.
-**Commit:** `chore(workspace): bootstrap SecureVault repository, docs system and AI context layer`
+**Commit:** `chore(workspace): bootstrap SecureVault workspace`
+
+**Addendum (same session, pre-S0.2):** added `docs/roadmap.md` — a full 53-session phase/milestone
+checklist tracker (checkboxes ticked at each Session Close going forward), wired into
+`docs/progress.md` CURRENT STATE, `docs/ai/CONTEXT.md`, and `docs/guide.md`'s new
+"Daily workflow" section, at the developer's request to keep the whole project's progress
+visible at a glance across daily/ad-hoc sessions and across AI tools.
