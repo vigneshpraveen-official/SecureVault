@@ -9,7 +9,7 @@ session log; this file is the static map both `progress.md` and every AI agent p
 forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching entry in
 `docs/progress.md`'s SESSION LOG.
 
-**Progress: 1 / 53 sessions complete.**
+**Progress: 2 / 53 sessions complete.**
 
 ---
 
@@ -18,7 +18,7 @@ forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching 
 ### Phase 0 — Workspace & foundations
 - [x] **S0.1** — Repo, docs system, Docker services, Spring Boot skeleton — *2026-08-10*
   Acceptance: `mvn spring-boot:run` starts; `/actuator/health` UP; Postgres + Redis containers up; all doc files exist.
-- [ ] **S0.2** — Product decomposition + architecture reasoning writeups (M-01, M-02)
+- [x] **S0.2** — Product decomposition + architecture reasoning writeups (M-01, M-02) — *2026-08-11*
   Acceptance: `docs/decomposition.md` (Feature/Why table, ≥25 features) and `docs/architecture.md` (layer diagram + where JWT/AES/Redis/audit/email sit, with reasoning).
 - [ ] **S0.3** — Schema design, ERD, Flyway baseline (M-03, M-04, M-05)
   Acceptance: DB `securevault` exists; `docs/db-design.md` complete with index rationale; ERD exported to `docs/erd/`; `V1__init.sql` applies cleanly.

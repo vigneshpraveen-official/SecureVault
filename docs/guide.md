@@ -120,8 +120,10 @@ PostgreSQL 16 (Docker locally / Neon in prod) — Flyway-migrated, ddl-auto=vali
 Redis 7 (Docker locally / Upstash in prod) — JWT denylist + vault-list cache (from Phase 5)
 ```
 
-Full target request flow (DispatcherServlet → Controller → Service → Repository → Hibernate
-→ PostgreSQL) — **TBD, added once the first real endpoint (S1.1) exists.**
+Full reasoned layer diagram and request flow (DispatcherServlet → Controller → Service →
+Repository → Hibernate → PostgreSQL, with Redis and async notifications hanging off the
+Service layer) is in `docs/architecture.md` (S0.2). A worked example with real classes gets
+added here once the first real endpoint (S1.1) exists.
 
 ## Module map
 

@@ -2,18 +2,18 @@
 
 ## CURRENT STATE
 - Phase: 0 — Workspace & foundations
-- Last session: S0.1 (repo, docs system, Docker services, Spring Boot skeleton)
-- Build: green | Tests: 0 (none written yet) | Migrations applied: V0 (baseline, no-op)
+- Last session: S0.2 (product decomposition + architecture reasoning)
+- Build: green (no code touched this session) | Tests: 0 | Migrations applied: V0 (baseline, no-op)
 - Working branch: main (personal fork repo only; no central-repo remote configured yet — see ADR-006)
-- Next session: S0.2 — product decomposition + architecture reasoning (M-01, M-02)
+- Next session: S0.3 — schema design, ERD, Flyway baseline (M-03, M-04, M-05)
 - Open blockers: none
-- Full phase/milestone tracker: `docs/roadmap.md` (1/53 sessions done)
+- Full phase/milestone tracker: `docs/roadmap.md` (2/53 sessions done)
 
 ## NEXT UP
-1. S0.2 — product decomposition + architecture reasoning writeups (M-01, M-02)
-2. S0.3 — schema design, ERD, Flyway baseline (M-03, M-04, M-05) — real V1__init.sql
-3. S1.1 — User entity + registration + BCrypt (M-06, M-07)
-4. S1.2 — Spring Security + JWT + login (M-15..M-19)
+1. S0.3 — schema design, ERD, Flyway baseline (M-03, M-04, M-05) — real V1__init.sql
+2. S1.1 — User entity + registration + BCrypt (M-06, M-07)
+3. S1.2 — Spring Security + JWT + login (M-15..M-19)
+4. S1.3 — Credential entity + AES-GCM + create/read (M-08, M-09, M-10)
 
 ---
 ## SESSION LOG
@@ -46,3 +46,23 @@ checklist tracker (checkboxes ticked at each Session Close going forward), wired
 `docs/progress.md` CURRENT STATE, `docs/ai/CONTEXT.md`, and `docs/guide.md`'s new
 "Daily workflow" section, at the developer's request to keep the whole project's progress
 visible at a glance across daily/ad-hoc sessions and across AI tools.
+
+### S0.2 — 2026-08-11 — Product decomposition + architecture reasoning
+**Mentor tasks:** M-01, M-02 — written deliverables, no code.
+**Done:**
+- `docs/decomposition.md` — 41 features (Feature / Why / Priority / Milestone table) covering
+  auth, MFA, sessions, vault CRUD, categorisation, search, favourites, notes, generation,
+  strength analysis, history, sharing, permissions, audit, monitoring, notifications,
+  dashboards, reports, admin, deployment. Closes with "Features we are deliberately NOT
+  building," citing master §3 Track C item by item.
+- `docs/architecture.md` — reasoned (not looked-up) answers to where JWT is created/validated,
+  where encryption happens and why not DB/browser, what Redis holds, why audit logs share the
+  write transaction, why email is async; an ASCII layer diagram; and a "why modular monolith,
+  not microservices" section.
+- `docs/guide.md` — Architecture overview section now points to `docs/architecture.md` for the
+  full reasoned diagram.
+**Files:** `docs/decomposition.md`, `docs/architecture.md`, `docs/guide.md`, `docs/progress.md`, `docs/roadmap.md`.
+**Decisions:** none — no locked decision touched; no ADR needed this session.
+**Verified:** no code changed, so no build/test impact; content checked against master §3, §5 (M-01/M-02), §9 (layering), §10/§11 (schema/API surface) for internal consistency — nothing invented that contradicts the spec.
+**Blockers:** none.
+**Commit:** _pending — proposed below, awaiting approval._
