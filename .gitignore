@@ -1,0 +1,47 @@
+# --- Java / Maven ---
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+
+# --- Node / frontend ---
+node_modules/
+dist/
+.vite/
+.turbo/
+
+# --- IDE ---
+.idea/
+*.iml
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.antigravity/
+.claude/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- logs ---
+logs/
+*.log
+
+# --- secrets / local config (never commit) ---
+.env
+.env.local
+.env.*.local
+application-local.yml
+*secret*
+*.key
+*.pem
+
+# --- generated ---
+build/
+
+# --- personal reference material (not part of the repo per §8) ---
+/00_initial_claude_code_prompt.md
+/All Tasks.txt
+/Java_Password Vault & Credential Management System.pdf
+/WORKSPACE_INSTRUCTIONS.md

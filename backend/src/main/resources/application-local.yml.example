@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/securevault
+    username: postgres
+    password: CHANGE_ME
+  jpa:
+    show-sql: true
+  flyway:
+    url: jdbc:postgresql://localhost:5432/securevault
+    user: postgres
+    password: CHANGE_ME
+
+logging:
+  level:
+    com.securevault: DEBUG

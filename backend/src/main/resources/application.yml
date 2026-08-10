@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: securevault
+  profiles:
+    active: local
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    clean-disabled: true
+    baseline-on-migrate: false
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+# JWT_SECRET and AES_SECRET_KEY are intentionally read with NO default here.
+# The app must fail fast at startup if they are missing rather than run insecurely.
+app:
+  security:
+    jwt-secret: ${JWT_SECRET}
+    jwt-access-expiry-ms: ${JWT_ACCESS_EXPIRY_MS:900000}
+    jwt-refresh-expiry-ms: ${JWT_REFRESH_EXPIRY_MS:604800000}
+    aes-secret-key: ${AES_SECRET_KEY}
+  cors:
+    allowed-origins: ${APP_CORS_ORIGINS:http://localhost:5173}

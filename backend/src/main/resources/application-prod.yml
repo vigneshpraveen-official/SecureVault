@@ -1,0 +1,13 @@
+# Placeholder for Phase 8 (Render + Neon + Upstash deployment).
+# Everything here comes from environment variables injected by the host platform —
+# no literal values belong in this file. See docs/securevault_master.md §18.
+#
+# TODO (S8.x): Neon requires ?sslmode=require on DB_URL; Upstash Redis requires rediss:// (TLS);
+# Render injects PORT — server.port must bind to ${PORT:8080}.
+
+spring:
+  jpa:
+    show-sql: false
+
+server:
+  port: ${PORT:8080}
