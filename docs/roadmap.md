@@ -9,7 +9,7 @@ session log; this file is the static map both `progress.md` and every AI agent p
 forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching entry in
 `docs/progress.md`'s SESSION LOG.
 
-**Progress: 2 / 53 sessions complete.**
+**Progress: 3 / 53 sessions complete.**
 
 ---
 
@@ -20,8 +20,9 @@ forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching 
   Acceptance: `mvn spring-boot:run` starts; `/actuator/health` UP; Postgres + Redis containers up; all doc files exist.
 - [x] **S0.2** — Product decomposition + architecture reasoning writeups (M-01, M-02) — *2026-08-11*
   Acceptance: `docs/decomposition.md` (Feature/Why table, ≥25 features) and `docs/architecture.md` (layer diagram + where JWT/AES/Redis/audit/email sit, with reasoning).
-- [ ] **S0.3** — Schema design, ERD, Flyway baseline (M-03, M-04, M-05)
+- [x] **S0.3** — Schema design, ERD, Flyway baseline (M-03, M-04, M-05) — *2026-08-11*
   Acceptance: DB `securevault` exists; `docs/db-design.md` complete with index rationale; ERD exported to `docs/erd/`; `V1__init.sql` applies cleanly.
+  Note: ERD PNG export is a manual step at dbdiagram.io (see `docs/db-design.md`) — DBML source is committed, image not yet exported.
 
 ### Phase 1 — Milestone 1: auth + vault core
 - [ ] **S1.1** — User entity + registration + BCrypt (M-06, M-07)

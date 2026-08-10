@@ -131,8 +131,10 @@ added here once the first real endpoint (S1.1) exists.
 
 ## Database schema
 
-**TBD — added in S0.3.** See `docs/db-design.md` (currently a stub) and master §10 for the
-target model.
+Full target schema, column-by-column, index rationale, and relationship diagram: `docs/db-design.md`.
+ERD source: `docs/erd/securevault.dbml` (paste into dbdiagram.io to render/export).
+Only `users` and `credentials` exist as of S0.3 (`V1__init.sql`) — everything else is
+documented ahead of time and migrated in the phase that needs it.
 
 ## API index
 

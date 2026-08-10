@@ -1,19 +1,19 @@
 # SecureVault — Progress Log
 
 ## CURRENT STATE
-- Phase: 0 — Workspace & foundations
-- Last session: S0.2 (product decomposition + architecture reasoning)
-- Build: green (no code touched this session) | Tests: 0 | Migrations applied: V0 (baseline, no-op)
+- Phase: 0 — Workspace & foundations (complete after this session)
+- Last session: S0.3 (schema design, ERD, Flyway baseline)
+- Build: green | Tests: 0 | Migrations applied: V0, V1 (users, credentials)
 - Working branch: main (personal fork repo only; no central-repo remote configured yet — see ADR-006)
-- Next session: S0.3 — schema design, ERD, Flyway baseline (M-03, M-04, M-05)
-- Open blockers: none
-- Full phase/milestone tracker: `docs/roadmap.md` (2/53 sessions done)
+- Next session: S1.1 — User entity + registration + BCrypt (M-06, M-07)
+- Open blockers: ERD PNG export is a manual dbdiagram.io step, not yet done by the developer (DBML source is committed)
+- Full phase/milestone tracker: `docs/roadmap.md` (3/53 sessions done)
 
 ## NEXT UP
-1. S0.3 — schema design, ERD, Flyway baseline (M-03, M-04, M-05) — real V1__init.sql
-2. S1.1 — User entity + registration + BCrypt (M-06, M-07)
-3. S1.2 — Spring Security + JWT + login (M-15..M-19)
-4. S1.3 — Credential entity + AES-GCM + create/read (M-08, M-09, M-10)
+1. S1.1 — User entity + registration + BCrypt (M-06, M-07)
+2. S1.2 — Spring Security + JWT + login (M-15..M-19)
+3. S1.3 — Credential entity + AES-GCM + create/read (M-08, M-09, M-10)
+4. S1.4 — Update, delete, ownership verification (M-11, M-12, M-13)
 
 ---
 ## SESSION LOG
@@ -65,4 +65,27 @@ visible at a glance across daily/ad-hoc sessions and across AI tools.
 **Decisions:** none — no locked decision touched; no ADR needed this session.
 **Verified:** no code changed, so no build/test impact; content checked against master §3, §5 (M-01/M-02), §9 (layering), §10/§11 (schema/API surface) for internal consistency — nothing invented that contradicts the spec.
 **Blockers:** none.
-**Commit:** _pending — proposed below, awaiting approval._
+**Commit:** `docs(planning): add product decomposition and architecture reasoning (M-01, M-02)`
+
+### S0.3 — 2026-08-11 — Schema design, ERD, Flyway baseline
+**Mentor tasks:** M-03, M-04, M-05
+**Done:**
+- Verified `securevault-postgres` (Docker, from S0.1) reachable at `localhost:5432` / db `securevault`.
+- `docs/db-design.md` rewritten from stub to full target schema (all 9 tables from master §10):
+  column/type/constraints/notes per table, PK/FK/unique/index callouts, an "Index rationale"
+  section answering M-23 in advance (title, category, composite `(user_id, deleted)` — why
+  each exists, the write-cost tradeoff, which queries each serves), the relationship summary,
+  and exact dbdiagram.io export steps.
+- `docs/erd/securevault.dbml` — full DBML source, all 9 tables and relations, with inline
+  notes on which phase/session adds each non-Phase-1 table.
+- `backend/src/main/resources/db/migration/V1__init.sql` — **only** `users` and `credentials`
+  (Phase 1 scope), BIGSERIAL PKs, TIMESTAMPTZ, snake_case, `encrypted_password` column name,
+  composite index `(user_id, deleted)`, single-column indexes on `title` and `category`.
+- No JPA entities added (deliberately deferred to Phase 1, per the session's own constraint).
+**Files:** `docs/db-design.md`, `docs/erd/securevault.dbml`, `backend/src/main/resources/db/migration/V1__init.sql`, `docs/guide.md`, `docs/progress.md`, `docs/roadmap.md`.
+**Decisions:** none new — column types not pinned by master §10 (e.g. `ip_address`/`user_agent`/`token_hash` lengths on the not-yet-migrated tables) are flagged inline in `db-design.md` as this session's own reasonable choices, revisitable when each table is actually migrated. Not ADR-worthy on their own.
+**Verified:**
+- `mvn spring-boot:run` (profile `local`) → Flyway log: `Successfully validated 2 migrations`, `Migrating schema "public" to version "1 - init"`, `now at version v1`. `GET /actuator/health` → `{"status":"UP"}`.
+- `\dt` → `users`, `credentials`, `flyway_schema_history`. `\d credentials` / `\d users` → every column, the FK, and all three indexes present exactly as specified in `V1__init.sql`.
+**Blockers:** ERD PNG export from dbdiagram.io is a manual step the developer still needs to do (I can't reach that web UI) — DBML source is committed and ready to paste in.
+**Commit:** `feat(db): add Phase 1 schema (users, credentials) with Flyway V1 and full ERD docs`
