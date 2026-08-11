@@ -5,6 +5,7 @@ import com.securevault.security.UserPrincipal;
 import com.securevault.vault.dto.CredentialCreateRequest;
 import com.securevault.vault.dto.CredentialDetailResponse;
 import com.securevault.vault.dto.CredentialResponse;
+import com.securevault.vault.dto.CredentialSummaryResponse;
 import com.securevault.vault.dto.CredentialUpdateRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -13,7 +14,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -40,58 +40,50 @@ public class CredentialController {
     }
 
     @GetMapping("/{id}")
-    public ApiResponse<CredentialDetailResponse> getById(
+    public ResponseEntity<ApiResponse<CredentialDetailResponse>> getById(
             @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
-        return ApiResponse.success(
-                "Credential retrieved successfully",
-                credentialService.getByIdForUser(id, principal.getId()));
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Credential retrieved successfully",
+                        credentialService.getByIdForUser(id, principal.getId())));
     }
 
     @GetMapping
-    public ApiResponse<List<CredentialResponse>> list(
+    public ResponseEntity<ApiResponse<List<CredentialSummaryResponse>>> list(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam(required = false) Category category) {
-        return ApiResponse.success(
-                "Vault retrieved successfully",
-                credentialService.listForUser(principal.getId(), category));
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Vault retrieved successfully",
+                        credentialService.listForUser(principal.getId(), category)));
     }
 
     @GetMapping("/search")
-    public ApiResponse<List<CredentialResponse>> search(
+    public ResponseEntity<ApiResponse<List<CredentialSummaryResponse>>> search(
             @AuthenticationPrincipal UserPrincipal principal, @RequestParam String q) {
-        return ApiResponse.success(
-                "Search results", credentialService.search(principal.getId(), q));
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Search results", credentialService.search(principal.getId(), q)));
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<CredentialResponse> update(
+    public ResponseEntity<ApiResponse<CredentialResponse>> update(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable Long id,
             @Valid @RequestBody CredentialUpdateRequest request) {
-        return ApiResponse.success(
-                "Credential updated successfully",
-                credentialService.update(id, principal.getId(), request));
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Credential updated successfully",
+                        credentialService.update(id, principal.getId(), request)));
     }
 
+    // The one endpoint shape exempt from the ApiResponse envelope: HTTP forbids a response body
+    // on 204 (RFC 9110 §15.3.5), so there is nothing an envelope could wrap (ADR-established
+    // S1.4, reaffirmed here for P2.3/M-27).
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(
             @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
         credentialService.delete(id, principal.getId());
         return ResponseEntity.noContent().build();
-    }
-
-    // Local handlers for this session only — full GlobalExceptionHandler + ErrorCode enum
-    // arrive in S2.3 (M-26/M-27). TODO(S2.3): move these there.
-    @ExceptionHandler(CredentialNotFoundException.class)
-    public ResponseEntity<ApiResponse<Void>> handleNotFound(CredentialNotFoundException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(ApiResponse.error(ex.getMessage(), "CREDENTIAL_NOT_FOUND", null));
-    }
-
-    @ExceptionHandler(CredentialAccessDeniedException.class)
-    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(
-            CredentialAccessDeniedException ex) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(ApiResponse.error(ex.getMessage(), "ACCESS_DENIED", null));
     }
 }

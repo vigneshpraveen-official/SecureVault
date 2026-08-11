@@ -9,7 +9,7 @@ session log; this file is the static map both `progress.md` and every AI agent p
 forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching entry in
 `docs/progress.md`'s SESSION LOG.
 
-**Progress: 9 / 53 sessions complete. Milestone 1 complete.**
+**Progress: 13 / 53 sessions complete. Milestone 1 complete. Phase 2 complete.**
 
 ---
 
@@ -43,10 +43,10 @@ forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching 
 ## Milestone 2 (Weeks 3–4) — Phases 2–4
 
 ### Phase 2 — Production-grade API refactor
-- [ ] **S2.1** — DTO layer + MapStruct mappers (M-24, M-28)
-- [ ] **S2.2** — Bean Validation across all requests (M-25)
-- [ ] **S2.3** — Custom exceptions + `@ControllerAdvice` + `ApiResponse` (M-26, M-27)
-- [ ] **S2.4** — Sweep + Postman regression
+- [x] **S2.1** — DTO layer + MapStruct mappers (M-24, M-28) — *2026-08-11*
+- [x] **S2.2** — Bean Validation across all requests (M-25) — *2026-08-11*
+- [x] **S2.3** — Custom exceptions + `@ControllerAdvice` + `ApiResponse` (M-26, M-27) — *2026-08-11*
+- [x] **S2.4** — Sweep + Postman regression — *2026-08-11*
 
 ### Phase 3 — Password intelligence
 - [ ] **S3.1** — Strength analyzer (M-29)
@@ -113,4 +113,4 @@ forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching 
 - [ ] **S9.2** — Demo rehearsal + evidence pack: full user journey in under 8 minutes, fallback screenshots for cold-start delays
 
 ---
-_Total: 53 sessions across 10 phases. Last updated: S0.1 — 2026-08-10._
+_Total: 53 sessions across 10 phases. Last updated: S2.4 — 2026-08-11._

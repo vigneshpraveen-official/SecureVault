@@ -125,3 +125,77 @@ lookups visibly rather than corrupting data invisibly).
 (`UPDATE credentials SET category = 'NEW_NAME' WHERE category = 'OLD_NAME'`) — a deliberate,
 visible action, which is exactly the tradeoff this ADR accepts in exchange for never having
 silent data corruption from a reordered enum.
+
+### ADR-012 — MapStruct for DTO↔Entity mapping (D-10), records as DTOs, split list/detail responses
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** S1.1-S1.6 built DTO↔Entity conversion as hand-written static `from(...)` factory
+methods on each response record. D-10 already locks MapStruct as the intended tool; P2.1/M-24
+asks the intern to demonstrate understanding of *why* mapping exists at all, not just wire up a
+library.
+**Decision:** Introduce `UserMapper` and `CredentialMapper` (`@Mapper(componentModel = "spring")`),
+generated at compile time via `mapstruct-processor`, with `lombok-mapstruct-binding` on the
+annotation processor path so Lombok's generated getters/setters/builder are visible to MapStruct
+during the same compilation pass (without it, MapStruct sees no accessors and silently emits
+empty mapper bodies — the exact trap master §20's known-issues table warns about). Any field
+needing encryption/decryption (`encryptedPassword` ↔ plaintext `password`) is explicitly excluded
+from every mapper method (`@Mapping(target = ..., ignore = true)`) and set in the service instead
+— mappers stay free of business logic and crypto, per the P2.1 prompt's explicit instruction.
+DTOs stay Java records (immutable, no setters, MapStruct 1.6.x supports records as mapping
+targets via constructor-parameter matching). `CredentialResponse` (create/update) and
+`CredentialSummaryResponse` (list/search) are now two distinct record types with identical
+fields today, so the list contract can evolve independently of the single-resource contract
+later without a breaking change — the API-contract-stability argument the P2.1 prompt asks for.
+Reasons mapping exists at all, for the record: (1) API contract stability — an entity's shape is
+free to change without breaking every response; (2) over-posting prevention — a request DTO has
+no `id`/`role`/`deleted` fields a client could try to smuggle in; (3) avoiding lazy-loading
+serialization failures — `Credential.user` is `FetchType.LAZY` (D-06); serializing the entity
+directly outside a transaction would throw or trigger an N+1, whereas the DTO never touches that
+relation; (4) never leaking internal fields — `User.passwordHash` and `Credential.encryptedPassword`
+physically cannot appear in a response type that has no field for them.
+**Alternatives:** Manual static factories (rejected — D-10 already named MapStruct; also what
+Phase 1 shipped as a stopgap, now superseded); a single shared `CredentialResponse` for both list
+and detail views (rejected — couples two API contracts that may need to diverge, e.g. a lighter
+list payload at scale in S4.5).
+**Consequences:** Every future feature-package DTO pair gets a matching `*Mapper` interface in
+that package, next to the entity, not in `common`. `CredentialResponse.from(...)` and
+`CredentialDetailResponse.from(...)` are removed; call sites use the injected mapper.
+
+### ADR-013 — Consolidated BusinessException hierarchy + generic AccessDeniedException + envelope-consistent 401/403
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** S1.1-S1.6 spread exception handling across per-controller `@ExceptionHandler`
+methods (each controller had its own, explicitly marked `TODO(S2.3)`) plus one basic
+`GlobalExceptionHandler` for validation and a catch-all. Spring Security's own 401 path used a
+plain `response.sendError(...)`, which returns a servlet-container error page, not the
+`ApiResponse` envelope — a shape mismatch the React client would otherwise have to special-case
+(P2.3 explicitly calls this out).
+**Decision:** One `common.exception` hierarchy: `ErrorCode` (the exact fixed enum from master
+§9), an abstract `BusinessException` carrying its own `ErrorCode` + `HttpStatus`, and concrete
+subclasses (`UserNotFoundException`, `CredentialNotFoundException`, `DuplicateEmailException`,
+`InvalidCredentialsException`, `AccessDeniedException`) moved out of their feature packages.
+`AccessDeniedException` is deliberately generic (replacing S1.4's `CredentialAccessDeniedException`)
+because master §9 defines exactly one `ACCESS_DENIED` code shared by every entity, whereas
+"not found" stays per-entity because each has its own distinct code. `GlobalExceptionHandler`
+gets one handler for the whole `BusinessException` family (`ex.getHttpStatus()`/`ex.getErrorCode()`
+already carry everything needed to render it) instead of one handler per concrete exception, plus
+handlers for `MethodArgumentNotValidException`, `ConstraintViolationException`,
+`HttpMessageNotReadableException`, `AuthenticationException`, the framework's own
+`org.springframework.security.access.AccessDeniedException` (referenced fully-qualified — it
+collides by name with our own type), and a catch-all that logs a correlation UUID at ERROR and
+returns it in the client message so a report can be matched back to a log line without ever
+exposing a stack trace or internal class name. `SecurityConfig` gets custom
+`AuthenticationEntryPoint`/`AccessDeniedHandler` beans that serialize the same `ApiResponse`
+envelope by hand via the app's `ObjectMapper`, since both run at the servlet-filter level, before
+`DispatcherServlet` — `@RestControllerAdvice` never sees them. `DELETE /api/vault/{id}` keeps
+returning a bodyless `ResponseEntity<Void>` (204) — the sole exemption from "every controller
+returns `ApiResponse<T>`", because RFC 9110 §15.3.5 forbids a body on 204; there is nothing an
+envelope could wrap.
+**Alternatives:** Keeping per-controller handlers (rejected — exactly the duplication P2.3 asks
+to remove); giving `AccessDeniedException` a per-entity name like `CredentialAccessDeniedException`
+(rejected — master §9's error-code enum has no per-entity access-denied code, so a per-entity
+exception class would just be extra ceremony around the same single `ACCESS_DENIED` code);
+embedding the correlation id as a new top-level `ApiResponse` field (rejected — that changes the
+locked envelope shape from D-11, which needs its own ADR and mentor sign-off; folding it into
+the message string needed neither).
+**Consequences:** Any new business exception goes in `common.exception`, extends
+`BusinessException`, and needs no new handler. Any new entity needing ownership checks reuses
+`AccessDeniedException` as-is.

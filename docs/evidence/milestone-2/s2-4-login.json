@@ -1,0 +1,1 @@
+{"success":true,"message":"Login successful","data":{"accessToken":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmcmFuay5wMkBleGFtcGxlLmNvbSIsImlhdCI6MTc4NjM5MzY5NSwiZXhwIjoxNzg2Mzk0NTk1fQ.DLuXT-xUsySrA-ilbC6nzXROngcgkHZJrELpGPeObeQ","userId":8,"fullName":"Frank Phase2","email":"frank.p2@example.com","role":"USER"},"errorCode":null,"errors":null,"timestamp":"2026-08-10T20:28:15.465710533Z"}

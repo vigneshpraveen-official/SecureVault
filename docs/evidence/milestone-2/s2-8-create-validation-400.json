@@ -1,0 +1,2 @@
+{"success":false,"message":"Validation failed","data":null,"errorCode":"VALIDATION_FAILED","errors":[{"field":"title","message":"must not be blank"},{"field":"websiteUrl","message":"must be a valid URL"}],"timestamp":"2026-08-10T20:28:35.616381901Z"}
+HTTP:400

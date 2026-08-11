@@ -1,11 +1,14 @@
 package com.securevault.vault;
 
+import com.securevault.common.exception.AccessDeniedException;
+import com.securevault.common.exception.CredentialNotFoundException;
 import com.securevault.security.crypto.AesEncryptionService;
 import com.securevault.user.User;
 import com.securevault.user.UserRepository;
 import com.securevault.vault.dto.CredentialCreateRequest;
 import com.securevault.vault.dto.CredentialDetailResponse;
 import com.securevault.vault.dto.CredentialResponse;
+import com.securevault.vault.dto.CredentialSummaryResponse;
 import com.securevault.vault.dto.CredentialUpdateRequest;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -19,46 +22,43 @@ public class CredentialServiceImpl implements CredentialService {
     private final CredentialRepository credentialRepository;
     private final UserRepository userRepository;
     private final AesEncryptionService aesEncryptionService;
+    private final CredentialMapper credentialMapper;
 
     @Override
     @Transactional
     public CredentialResponse create(Long userId, CredentialCreateRequest request) {
         User owner = userRepository.getReferenceById(userId);
 
-        Credential credential =
-                Credential.builder()
-                        .user(owner)
-                        .title(request.title())
-                        .username(request.username())
-                        .encryptedPassword(aesEncryptionService.encrypt(request.password()))
-                        .websiteUrl(request.websiteUrl())
-                        .notes(request.notes())
-                        .category(request.category() != null ? request.category() : Category.OTHER)
-                        .build();
+        Credential credential = credentialMapper.toEntity(request);
+        credential.setUser(owner);
+        credential.setEncryptedPassword(aesEncryptionService.encrypt(request.password()));
+        if (request.category() != null) {
+            credential.setCategory(request.category());
+        }
 
-        return CredentialResponse.from(credentialRepository.save(credential));
+        return credentialMapper.toResponse(credentialRepository.save(credential));
     }
 
     @Override
     public CredentialDetailResponse getByIdForUser(Long id, Long userId) {
         Credential credential = loadOwned(id, userId);
         String decrypted = aesEncryptionService.decrypt(credential.getEncryptedPassword());
-        return CredentialDetailResponse.from(credential, decrypted);
+        return credentialMapper.toDetailResponse(credential, decrypted);
     }
 
     @Override
-    public List<CredentialResponse> listForUser(Long userId, Category category) {
+    public List<CredentialSummaryResponse> listForUser(Long userId, Category category) {
         List<Credential> credentials =
                 category == null
                         ? credentialRepository.findByUserId(userId)
                         : credentialRepository.findByUserIdAndCategory(userId, category);
-        return credentials.stream().map(CredentialResponse::from).toList();
+        return credentials.stream().map(credentialMapper::toSummaryResponse).toList();
     }
 
     @Override
-    public List<CredentialResponse> search(Long userId, String term) {
+    public List<CredentialSummaryResponse> search(Long userId, String term) {
         return credentialRepository.search(userId, term).stream()
-                .map(CredentialResponse::from)
+                .map(credentialMapper::toSummaryResponse)
                 .toList();
     }
 
@@ -67,21 +67,12 @@ public class CredentialServiceImpl implements CredentialService {
     public CredentialResponse update(Long id, Long userId, CredentialUpdateRequest request) {
         Credential credential = loadOwned(id, userId);
 
-        if (request.title() != null) {
-            credential.setTitle(request.title());
-        }
-        if (request.username() != null) {
-            credential.setUsername(request.username());
-        }
-        if (request.websiteUrl() != null) {
-            credential.setWebsiteUrl(request.websiteUrl());
-        }
-        if (request.notes() != null) {
-            credential.setNotes(request.notes());
-        }
-        if (request.category() != null) {
-            credential.setCategory(request.category());
-        }
+        // title/username/websiteUrl/notes/category: MapStruct copies only non-null request
+        // fields onto the entity (NullValuePropertyMappingStrategy.IGNORE) — null means "leave
+        // unchanged" (S1.4). Password is excluded from the mapper entirely; it needs
+        // decrypt-and-compare, which is business logic, not a mapping concern (P2.1/M-24).
+        credentialMapper.updateEntityFromRequest(request, credential);
+
         if (request.password() != null) {
             // Ciphertext can never be compared directly — GCM uses a fresh random IV every
             // encryption (D-05), so the same plaintext never produces the same stored value
@@ -94,7 +85,7 @@ public class CredentialServiceImpl implements CredentialService {
             }
         }
 
-        return CredentialResponse.from(credentialRepository.save(credential));
+        return credentialMapper.toResponse(credentialRepository.save(credential));
     }
 
     @Override
@@ -112,7 +103,7 @@ public class CredentialServiceImpl implements CredentialService {
                         .findById(id)
                         .orElseThrow(() -> new CredentialNotFoundException(id));
         if (!credential.getUser().getId().equals(userId)) {
-            throw new CredentialAccessDeniedException();
+            throw new AccessDeniedException("You do not have access to this credential");
         }
         return credential;
     }

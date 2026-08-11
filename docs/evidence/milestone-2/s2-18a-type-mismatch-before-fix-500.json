@@ -1,0 +1,2 @@
+{"success":false,"message":"Validation failed","data":null,"errorCode":"VALIDATION_FAILED","errors":[{"field":"id","message":"must be a valid Long"}],"timestamp":"2026-08-10T20:31:21.057244642Z"}
+HTTP:400

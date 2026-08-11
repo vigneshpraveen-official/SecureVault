@@ -1,12 +1,12 @@
 package com.securevault.vault.dto;
 
 import com.securevault.vault.Category;
-import com.securevault.vault.Credential;
 import java.time.Instant;
 
 /**
- * Never carries the password — used for create and list. Single-credential reveal uses
- * CredentialDetailResponse.
+ * Never carries the password — used for create/update responses. List view uses
+ * CredentialSummaryResponse; single-credential reveal uses CredentialDetailResponse. Built by
+ * CredentialMapper (MapStruct), not a static factory (P2.1/M-24).
  */
 public record CredentialResponse(
         Long id,
@@ -17,18 +17,4 @@ public record CredentialResponse(
         Category category,
         boolean favorite,
         Instant createdAt,
-        Instant updatedAt) {
-
-    public static CredentialResponse from(Credential credential) {
-        return new CredentialResponse(
-                credential.getId(),
-                credential.getTitle(),
-                credential.getUsername(),
-                credential.getWebsiteUrl(),
-                credential.getNotes(),
-                credential.getCategory(),
-                credential.isFavorite(),
-                credential.getCreatedAt(),
-                credential.getUpdatedAt());
-    }
-}
+        Instant updatedAt) {}

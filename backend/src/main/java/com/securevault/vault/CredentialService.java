@@ -3,6 +3,7 @@ package com.securevault.vault;
 import com.securevault.vault.dto.CredentialCreateRequest;
 import com.securevault.vault.dto.CredentialDetailResponse;
 import com.securevault.vault.dto.CredentialResponse;
+import com.securevault.vault.dto.CredentialSummaryResponse;
 import com.securevault.vault.dto.CredentialUpdateRequest;
 import java.util.List;
 
@@ -16,9 +17,9 @@ public interface CredentialService {
      * category is nullable — null returns every credential. Shaped to absorb more optional filters
      * in S4.5 without a rewrite.
      */
-    List<CredentialResponse> listForUser(Long userId, Category category);
+    List<CredentialSummaryResponse> listForUser(Long userId, Category category);
 
-    List<CredentialResponse> search(Long userId, String term);
+    List<CredentialSummaryResponse> search(Long userId, String term);
 
     CredentialResponse update(Long id, Long userId, CredentialUpdateRequest request);
 

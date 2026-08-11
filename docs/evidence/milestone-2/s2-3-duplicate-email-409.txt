@@ -1,0 +1,2 @@
+{"success":false,"message":"Email already registered: frank.p2@example.com","data":null,"errorCode":"DUPLICATE_EMAIL","errors":null,"timestamp":"2026-08-10T20:28:15.181255610Z"}
+HTTP:409

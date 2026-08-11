@@ -1,20 +1,19 @@
 # SecureVault — Progress Log
 
 ## CURRENT STATE
-- Phase: 1 — Milestone 1: auth + vault core (**complete**)
-- Last session: S1.6 (Milestone 1 evidence pack)
-- Build: green | Tests: 3 passing (`AesEncryptionServiceTest`) | Migrations applied: V0, V1 (users, credentials)
+- Phase: 2 — Production-grade API refactor (**complete**)
+- Last session: S2.4 (sweep + Postman regression)
+- Build: green | Tests: 3 passing (`AesEncryptionServiceTest`) | Migrations applied: V0, V1 (users, credentials) — no schema change this phase
 - Working branch: main (personal fork repo only; no central-repo remote configured yet — see ADR-006)
-- Next session: S2.1 — DTO layer + MapStruct mappers (M-24, M-28)
+- Next session: S3.1 — Password strength analyzer (M-29)
 - Open blockers: ERD PNG export is a manual dbdiagram.io step, not yet done by the developer (DBML source is committed)
-- Commit cadence: **one commit per phase**, not per session (ADR-008, developer's explicit preference from Phase 1 on) — Phase 1's six sessions land in a single commit
-- Full phase/milestone tracker: `docs/roadmap.md` (9/53 sessions done, **Milestone 1 complete**)
+- Commit cadence: **one commit per phase**, not per session (ADR-008, developer's explicit preference from Phase 1 on) — Phase 2's four sessions land in a single commit
+- Full phase/milestone tracker: `docs/roadmap.md` (13/53 sessions done, Milestone 1 complete, **Phase 2 complete**)
 
 ## NEXT UP
-1. S2.1 — DTO layer + MapStruct mappers (M-24, M-28)
-2. S2.2 — Bean Validation across all requests (M-25)
-3. S2.3 — Custom exceptions + `@ControllerAdvice` + `ApiResponse` (M-26, M-27)
-4. S2.4 — Sweep + Postman regression
+1. S3.1 — Password strength analyzer (M-29)
+2. S3.2 — Generator with `SecureRandom` (M-30)
+3. S3.3 — Entropy + vault integration
 
 ---
 ## SESSION LOG
@@ -209,3 +208,61 @@ visible at a glance across daily/ad-hoc sessions and across AI tools.
 **Verified:** `mvn clean verify` green. Blank/malformed register request → 400 with per-field `VALIDATION_FAILED` messages instead of an unhandled exception or bad data reaching the DB (`s1.6-gap-fix-validation-400.txt`). Full continuous journey evidence in `s1.6-journey-*`.
 **Blockers:** none. **Milestone 1 is complete** — all checklist lines PASS.
 **Commit:** _batched — see Phase 1 close, ADR-008._
+
+### S2.1 — 2026-08-11 — DTO layer + MapStruct mappers
+**Mentor tasks:** M-24, M-28
+**Done:**
+- Added MapStruct (`mapstruct` + `mapstruct-processor` 1.6.3, `lombok-mapstruct-binding` 0.2.0) to `backend/pom.xml`, with an explicit `maven-compiler-plugin` `annotationProcessorPaths` ordering Lombok → mapstruct-processor → the binding jar, so Lombok's generated accessors are visible to MapStruct in the same compile pass (master §20's known-issue table warns this silently produces empty mappers without the binding jar).
+- `UserMapper` (`user/`) and `CredentialMapper` (`vault/`) — `@Mapper(componentModel = "spring")`, generated at compile time. Every field needing encryption/decryption (`encryptedPassword` ↔ plaintext) is `@Mapping(target = ..., ignore = true)` in the mapper and set explicitly in the service — mappers stay free of crypto and business logic, per the prompt's explicit instruction.
+- `CredentialUpdateRequest → Credential` uses `@BeanMapping(nullValuePropertyMappingStrategy = IGNORE)` — replaces S1.4's five hand-written `if (x != null)` checks with the equivalent generated code (verified identical behavior against the generated `CredentialMapperImpl`).
+- New `CredentialSummaryResponse` (list/search view) split out from `CredentialResponse` (create/update view) — same fields today, but now two independently-evolvable API contracts, per the prompt's explicit ask.
+- Removed the static `from(...)` factory methods from `UserResponse`, `CredentialResponse`, `CredentialDetailResponse` — all mapping now goes through the injected mapper.
+- Every controller method already took/returned only DTOs going into this session (S1.1-S1.6 never leaked an entity); confirmed still true after the refactor.
+**Files:** `backend/pom.xml`, `user/UserMapper.java` (new), `user/UserServiceImpl.java`, `user/dto/UserResponse.java`, `vault/CredentialMapper.java` (new), `vault/CredentialService.java`, `vault/CredentialServiceImpl.java`, `vault/CredentialController.java`, `vault/dto/CredentialResponse.java`, `vault/dto/CredentialDetailResponse.java`, `vault/dto/CredentialSummaryResponse.java` (new), `docs/decisions.md` (ADR-012).
+**Decisions:** ADR-012 (MapStruct for DTO↔Entity mapping, records as DTOs, split list/detail responses — full reasoning for *why* mapping exists, per the mentor's explicit ask).
+**Verified:** `mvn clean compile` generates `UserMapperImpl`/`CredentialMapperImpl`; inspected the generated source directly — `toEntity` correctly uses `Credential.builder()` (MapStruct auto-detects the Lombok `@Builder`), so `category`/`favorite`/`deleted` retain their `@Builder.Default` values exactly as S1.3-S1.5 intended. `mvn test` green (`AesEncryptionServiceTest`).
+**Blockers:** none.
+**Commit:** _batched — see Phase 2 close, ADR-008._
+
+### S2.2 — 2026-08-11 — Bean Validation (full coverage)
+**Mentor task:** M-25
+**Done:**
+- `UserRegisterRequest.password`: `@Size(min = 8, max = 72)` (72 = BCrypt's hard byte limit — accepting a longer password would silently lie about what's actually checked) + `@Pattern` four-class complexity (upper/lower/digit/special).
+- `LoginRequest.password`: deliberately **stays presence-only** (`@NotBlank`, no `@Pattern`/`@Size`) — a user whose password predates a later policy tightening must still be able to log in; complexity is checked once, at registration.
+- `CredentialCreateRequest`/`CredentialUpdateRequest`: `@Size` bounds matching the DB column lengths (title 150, username 150, websiteUrl 255, notes capped at 2000 as an app-level guard on the unbounded `TEXT` column), `@URL` on `websiteUrl` (optional — only validated when present). `password` deliberately has **no `@Pattern`** on either DTO: it's a secret for a third-party site, not the SecureVault account password — the app has no authority to demand it meet a complexity policy. `CredentialUpdateRequest` uses `@Size(min = 1, ...)` instead of `@NotBlank` throughout, since `null` (field omitted) must still pass — only a present-but-blank value should fail.
+- Wrote `docs/validation.md` — annotation-by-annotation table per DTO, plus the two questions the mentor explicitly asks interns to be able to answer: `@NotBlank` vs `@NotNull`, and `@Size` vs `@Pattern`.
+**Files:** `user/dto/UserRegisterRequest.java`, `security/dto/LoginRequest.java`, `vault/dto/CredentialCreateRequest.java`, `vault/dto/CredentialUpdateRequest.java`, `docs/validation.md` (new).
+**Decisions:** none new — validation bounds documented inline and in `docs/validation.md`, not ADR-level (no locked decision changed).
+**Verified:** curl evidence for a blank/malformed register request and a blank-title/bad-URL credential create request, both 400 with exact per-field messages, in `docs/evidence/milestone-2/`.
+**Blockers:** none.
+**Commit:** _batched — see Phase 2 close, ADR-008._
+
+### S2.3 — 2026-08-11 — Exceptions + global handler + response envelope
+**Mentor tasks:** M-26, M-27
+**Done:**
+- `common/exception/ErrorCode` — the exact fixed enum from master §9. `common/exception/BusinessException` (abstract) carries its own `ErrorCode` + `HttpStatus`. Five concrete subclasses moved out of their feature packages into `common.exception`: `UserNotFoundException` (new — not yet thrown anywhere; ready for a later phase's direct user-lookup endpoint), `CredentialNotFoundException`, `DuplicateEmailException`, `InvalidCredentialsException`, and a **generic** `AccessDeniedException` (replaces S1.4's `CredentialAccessDeniedException` — master §9 defines exactly one `ACCESS_DENIED` code shared by every entity, unlike "not found," which stays per-entity).
+- `GlobalExceptionHandler` rewritten: one `@ExceptionHandler(BusinessException.class)` covers every business exception (each already carries its own status/code), plus `MethodArgumentNotValidException`, `ConstraintViolationException`, `HttpMessageNotReadableException` (malformed JSON / invalid enum value), `AuthenticationException` (safety net), the framework's own `org.springframework.security.access.AccessDeniedException` (referenced fully-qualified — collides by name with our own type), and a catch-all that logs a correlation UUID at `ERROR` and returns it in the client-facing message so a report can be matched to a log line without ever exposing a stack trace or internal class name.
+- Removed every per-controller `@ExceptionHandler` stopgap from `UserController`, `AuthController`, `CredentialController` (all were explicitly marked `TODO(S2.3)` since the session that added them).
+- `SecurityConfig` gets `AuthenticationEntryPoint`/`AccessDeniedHandler` beans that serialize the identical `ApiResponse` envelope by hand via the app's `ObjectMapper` — both run at the servlet-filter level, before `DispatcherServlet`, so `@RestControllerAdvice` never sees them; previously 401 was a bare `response.sendError(...)` with an empty body.
+- `common/response/PagedResponse<T>` added (unused until S4.5, per the prompt's explicit ask to have it ready ahead of time).
+- `DELETE /api/vault/{id}` keeps its bodyless `ResponseEntity<Void>` (204) as the sole exemption from "every controller returns `ApiResponse<T>`" — RFC 9110 §15.3.5 forbids a body on 204.
+- Every `CredentialController` method now returns `ResponseEntity<ApiResponse<T>>` explicitly (previously `getById`/`list`/`search`/`update` returned bare `ApiResponse<T>`, which Spring still wraps as 200 but doesn't match the prompt's explicit ask).
+**Files:** `common/exception/ErrorCode.java` (new), `common/exception/BusinessException.java` (new), `common/exception/UserNotFoundException.java` (new), `common/exception/CredentialNotFoundException.java` (moved), `common/exception/DuplicateEmailException.java` (moved), `common/exception/InvalidCredentialsException.java` (moved), `common/exception/AccessDeniedException.java` (new, replaces `vault/CredentialAccessDeniedException.java`, deleted), `common/exception/GlobalExceptionHandler.java`, `common/response/PagedResponse.java` (new), `config/SecurityConfig.java`, `user/UserController.java`, `user/UserServiceImpl.java`, `security/AuthController.java`, `vault/CredentialServiceImpl.java`, `vault/CredentialController.java`, `docs/decisions.md` (ADR-013).
+**Decisions:** ADR-013 (consolidated `BusinessException` hierarchy, generic `AccessDeniedException`, envelope-consistent 401/403).
+**Verified:** curl evidence for every status/error-code combination — 201/400/409 (register), 200/400/401 (login), 201/400/401 (create), 200/400/401/403/404 (get by id), 200/401 (list/search), 200/400/401/403/404 (update), 204/401/403/404 (delete), 500-with-correlation-id (unexpected). No-token and tampered-token 401 now return the full `ApiResponse` envelope instead of an empty body — confirmed via curl, captured in `docs/evidence/milestone-2/`.
+**Blockers:** none.
+**Commit:** _batched — see Phase 2 close, ADR-008._
+
+### S2.4 — 2026-08-11 — Sweep and regression
+**No new features.**
+**Done:**
+- Ran the W-4/P-AUDIT checklist (restricted to Phase 1-2 scope) by hand: no controller references an entity; every endpoint (except the justified 204 delete) is `ApiResponse`-wrapped; no exception handled outside `GlobalExceptionHandler`; every inbound DTO has Bean Validation; no `System.out`/`printStackTrace`; no password/token/secret ever logged; no `java.util.Random` in security-adjacent code; every `@ManyToOne` is `LAZY`; every multi-table write is `@Transactional`; package placement and naming match convention; no schema change without a migration (none needed this phase); no hardcoded secrets/URLs; no dead code (Spotless removes unused imports on every build); every endpoint documented.
+- Found and fixed **two real HIGH findings** while manually exercising every endpoint (not from the checklist itself, but exactly the kind of drift W-4 exists to catch): `GET /api/vault/{id-as-non-numeric-string}` and `GET /api/vault/search` with no `?q=` both fell through to the catch-all `Exception` handler and returned **500**, when a client sending the wrong type or omitting a required parameter is a **400**. Added `MethodArgumentTypeMismatchException` and `MissingServletRequestParameterException` handlers to `GlobalExceptionHandler`. Re-verified both now return 400 with a field-level message.
+- Re-ran the full Postman collection's requests via curl (no Postman GUI available this session either, same disclosed limitation as every prior session) and updated `postman/SecureVault.postman_collection.json`: fixed the two 401 examples whose saved bodies were empty (pre-S2.3 behavior) to the new `ApiResponse` envelope body, and added 5 new requests/examples covering behavior that only exists as of Phase 2 — register validation failure, vault-create validation failure, credential not-found (404), malformed path-variable id (400), and missing search `q` (400). Collection grew 19 → 24 requests.
+- Regenerated `docs/api-contract.md` from the actual controllers — every row rewritten (added `400`/`VALIDATION_FAILED` to every endpoint that now validates, split list/search's response type to `CredentialSummaryResponse`), plus a new "Error responses, uniformly" section and the full `ErrorCode` reference.
+- Updated `docs/guide.md`: the "Module map" and "API index" sections had been left as `**TBD**` placeholders since S0.1 despite six Phase-1 sessions shipping real code — filled in properly. Added a worked request-flow diagram (`JwtAuthenticationFilter` → `DispatcherServlet` → `Controller` → `Service` → `Mapper` → `Repository` → `Hibernate` → `PostgreSQL`, with the exception/envelope path called out) using `CredentialController#update` as the concrete example, per the prompt's explicit ask.
+**Files:** `common/exception/GlobalExceptionHandler.java` (two new handlers), `docs/api-contract.md` (regenerated), `docs/guide.md` (module map, API index, request-flow diagram), `postman/SecureVault.postman_collection.json` (5 new requests, 2 fixed examples), `docs/evidence/milestone-2/*` (new).
+**Decisions:** none new — both fixes are bug fixes surfaced by the audit, not decisions.
+**Verified:** `mvn clean verify` green after every change in this phase, run again at phase close. Full curl-based journey re-run end to end (register → validation failure → login → 401s → vault CRUD → search/filter → cross-user 403 → 404 → type-mismatch 400 → missing-param 400 → 500-with-correlation-id) — evidence in `docs/evidence/milestone-2/`.
+**Blockers:** none. **Phase 2 is complete.**
+**Commit:** _batched — see Phase 2 close, ADR-008._

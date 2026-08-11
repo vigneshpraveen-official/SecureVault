@@ -4,7 +4,8 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 
 /**
- * Minimal validation added in S1.6 to close a Milestone 1 quality gap. Full coverage is S2.2
- * (M-25).
+ * Presence-only validation (P2.2/M-25) — deliberately no @Pattern/@Size complexity check on
+ * password: login must keep authenticating users whose password predates any later policy
+ * tightening. Full coverage rationale in docs/validation.md.
  */
 public record LoginRequest(@NotBlank @Email String email, @NotBlank String password) {}

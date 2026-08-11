@@ -1,0 +1,2 @@
+{"success":false,"message":"Validation failed","data":null,"errorCode":"VALIDATION_FAILED","errors":[{"field":"fullName","message":"must not be blank"},{"field":"password","message":"must contain at least one uppercase letter, one lowercase letter, one digit, and one special character"},{"field":"password","message":"must be between 8 and 72 characters"},{"field":"email","message":"must be a well-formed email address"}],"timestamp":"2026-08-10T20:27:48.511979933Z"}
+HTTP:400

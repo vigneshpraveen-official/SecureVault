@@ -120,14 +120,69 @@ PostgreSQL 16 (Docker locally / Neon in prod) — Flyway-migrated, ddl-auto=vali
 Redis 7 (Docker locally / Upstash in prod) — JWT denylist + vault-list cache (from Phase 5)
 ```
 
-Full reasoned layer diagram and request flow (DispatcherServlet → Controller → Service →
-Repository → Hibernate → PostgreSQL, with Redis and async notifications hanging off the
-Service layer) is in `docs/architecture.md` (S0.2). A worked example with real classes gets
-added here once the first real endpoint (S1.1) exists.
+Full reasoned layer diagram is in `docs/architecture.md` (S0.2). Below is the request flow
+with the real classes involved, as of Phase 2 (P2.4/S2.4) — every layer, in order, for a
+typical authenticated request:
+
+```
+Client (curl / Postman / future React)
+  │  HTTP request, e.g. PUT /api/vault/7  { "title": "New Title" }
+  ▼
+JwtAuthenticationFilter (security/)          — OncePerRequestFilter, before DispatcherServlet
+  │  no/invalid token → SecurityContext left empty → AuthenticationEntryPoint bean writes a
+  │  401 ApiResponse envelope directly to the response and the chain stops here (config/SecurityConfig)
+  │  valid token → SecurityContext populated with UserPrincipal, chain continues
+  ▼
+DispatcherServlet → HandlerMapping → CredentialController#update(...)   (vault/)
+  │  @Valid @RequestBody CredentialUpdateRequest — Bean Validation runs before the method body;
+  │  a failure short-circuits straight to GlobalExceptionHandler#handleValidation (never reaches
+  │  the controller body) — see docs/validation.md
+  │  @AuthenticationPrincipal UserPrincipal — userId comes from the JWT, never the request body
+  ▼
+CredentialServiceImpl#update(...)             (vault/) — @Transactional
+  │  loadOwned(id, userId) — 404 (CredentialNotFoundException) if missing,
+  │  403 (AccessDeniedException) if it exists but isn't the caller's
+  │  CredentialMapper#updateEntityFromRequest — MapStruct copies non-null request fields onto
+  │  the managed entity (null = "leave unchanged", S1.4); password re-encryption (decrypt +
+  │  compare + AesEncryptionService#encrypt) stays in the service, never in the mapper
+  ▼
+CredentialRepository (vault/) — Spring Data JPA
+  ▼
+Hibernate → PostgreSQL 16 — schema owned by Flyway, ddl-auto=validate only
+  ▲
+  │  updated Credential entity returns back up the stack
+CredentialMapper#toResponse(...) → CredentialResponse                    (vault/dto/)
+  ▲
+CredentialController wraps it: ResponseEntity.ok(ApiResponse.success(...))
+  ▲
+Client receives 200 { "success": true, "data": { ... }, ... }
+```
+
+Anything that goes wrong anywhere in the Controller → Service → Repository chain (a business
+exception, a Bean Validation failure, a malformed body, an unexpected bug) is caught by
+`common/exception/GlobalExceptionHandler` (`@RestControllerAdvice`) and rendered in the same
+`ApiResponse` envelope — see `docs/api-contract.md` → "Error responses, uniformly". Only the
+two exceptions that fire *before* `DispatcherServlet` (401 unauthenticated, 403 from Spring
+Security's own access-control layer) bypass the `@RestControllerAdvice` entirely; those are
+handled by the `AuthenticationEntryPoint`/`AccessDeniedHandler` beans in `SecurityConfig`
+instead, which write the identical envelope shape by hand.
 
 ## Module map
 
-**TBD — added in S1.1** once `user/` has real classes to describe.
+| Package | Contains | Status |
+|---|---|---|
+| `config/` | `SecurityConfig` — JWT filter chain, CORS, `AuthenticationEntryPoint`/`AccessDeniedHandler` | live |
+| `common/response/` | `ApiResponse<T>` (envelope), `PagedResponse<T>` (reserved for S4.5) | live |
+| `common/exception/` | `ErrorCode`, `BusinessException` + concrete subclasses, `GlobalExceptionHandler` | live |
+| `common/audit/`, `common/util/` | reserved | empty, Phase 4+ |
+| `security/` | `JwtService`, `JwtAuthenticationFilter`, `UserPrincipal`, `CustomUserDetailsService`, `AuthController` (login), `security/crypto/AesEncryptionService`, `security/dto/` | live |
+| `user/` | `User` entity, `Role`, `UserRepository`, `UserService`/`Impl`, `UserController` (register), `UserMapper`, `user/dto/` | live |
+| `vault/` | `Credential` entity, `Category`, `CredentialRepository`, `CredentialService`/`Impl`, `CredentialController` (full CRUD + search/filter), `CredentialMapper`, `vault/dto/` | live |
+| `password/`, `sharing/`, `notification/`, `monitoring/`, `report/`, `admin/` | reserved (package-info only) | empty, Phase 3+ |
+
+Every feature package with real code follows the same shape: `Entity`, `Repository`
+(Spring Data interface), `Service`/`ServiceImpl`, `Controller`, `Mapper` (MapStruct), and a
+`dto/` sub-package for request/response records — see `docs/ai/CONVENTIONS.md`.
 
 ## Database schema
 
@@ -138,7 +193,9 @@ documented ahead of time and migrated in the phase that needs it.
 
 ## API index
 
-**TBD — grows with `docs/api-contract.md`.** Currently only `GET /actuator/health` exists.
+Full live index (every real endpoint, request/response DTOs, status/error codes) is
+`docs/api-contract.md`, regenerated from the actual controllers each phase. As of Phase 2:
+register, login, and full vault CRUD + search/filter — 8 endpoints plus `/actuator/health`.
 
 ## Testing
 
@@ -162,4 +219,4 @@ Neon (PostgreSQL), Upstash (Redis) — see master §18.
   stop it before retrying.
 
 ---
-_Last updated: S0.1 — 2026-08-10. All commands above were run and verified this session._
+_Last updated: S2.4 — 2026-08-11._

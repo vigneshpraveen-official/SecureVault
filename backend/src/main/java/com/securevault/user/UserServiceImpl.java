@@ -1,5 +1,6 @@
 package com.securevault.user;
 
+import com.securevault.common.exception.DuplicateEmailException;
 import com.securevault.user.dto.UserRegisterRequest;
 import com.securevault.user.dto.UserResponse;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +14,7 @@ public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final UserMapper userMapper;
 
     @Override
     @Transactional
@@ -29,6 +31,6 @@ public class UserServiceImpl implements UserService {
                         .role(Role.USER)
                         .build();
 
-        return UserResponse.from(userRepository.save(user));
+        return userMapper.toResponse(userRepository.save(user));
     }
 }

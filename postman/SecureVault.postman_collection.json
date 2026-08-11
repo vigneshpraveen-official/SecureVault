@@ -193,6 +193,73 @@
           ]
         },
         {
+          "name": "POST /api/auth/register - validation failure (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"\",\n  \"email\": \"not-an-email\",\n  \"password\": \"weak\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "400 example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/register",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "register"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fullName\": \"\",\n  \"email\": \"not-an-email\",\n  \"password\": \"weak\"\n}"
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"Validation failed\",\"data\":null,\"errorCode\":\"VALIDATION_FAILED\",\"errors\":[{\"field\":\"fullName\",\"message\":\"must not be blank\"},{\"field\":\"password\",\"message\":\"must contain at least one uppercase letter, one lowercase letter, one digit, and one special character\"},{\"field\":\"password\",\"message\":\"must be between 8 and 72 characters\"},{\"field\":\"email\",\"message\":\"must be a well-formed email address\"}],\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
           "name": "POST /api/auth/login - success",
           "event": [
             {
@@ -383,7 +450,7 @@
                 }
               ],
               "cookie": [],
-              "body": ""
+              "body": "{\"success\":false,\"message\":\"Authentication required\",\"data\":null,\"errorCode\":\"INVALID_CREDENTIALS\",\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
             }
           ]
         },
@@ -497,7 +564,7 @@
                 }
               ],
               "cookie": [],
-              "body": ""
+              "body": "{\"success\":false,\"message\":\"Authentication required\",\"data\":null,\"errorCode\":\"INVALID_CREDENTIALS\",\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
             }
           ]
         },
@@ -582,6 +649,79 @@
               ],
               "cookie": [],
               "body": "{\"success\":true,\"message\":\"Credential created successfully\",\"data\":{\"id\":1,\"title\":\"GitHub\",\"username\":\"dave.gh\",\"websiteUrl\":\"https://github.com\",\"notes\":\"work account\",\"category\":\"OTHER\",\"favorite\":false,\"createdAt\":\"2026-08-10T19:38:02.802780Z\",\"updatedAt\":\"2026-08-10T19:38:02.802794Z\"},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-10T19:38:02.812334148Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "POST /api/vault - validation failure (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"password\": \"x\",\n  \"websiteUrl\": \"not a url\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "400 example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"\",\n  \"password\": \"x\",\n  \"websiteUrl\": \"not a url\"\n}"
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"Validation failed\",\"data\":null,\"errorCode\":\"VALIDATION_FAILED\",\"errors\":[{\"field\":\"title\",\"message\":\"must not be blank\"},{\"field\":\"websiteUrl\",\"message\":\"must be a valid URL\"}],\"timestamp\":\"2026-08-11T00:00:00Z\"}"
             }
           ]
         },
@@ -700,6 +840,124 @@
               ],
               "cookie": [],
               "body": "{\"success\":false,\"message\":\"You do not have access to this credential\",\"data\":null,\"errorCode\":\"ACCESS_DENIED\",\"errors\":null,\"timestamp\":\"2026-08-10T19:38:15.628488143Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault/{id} - not found (404)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "999999"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "404 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/999999",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "999999"
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"Credential not found: 999999\",\"data\":null,\"errorCode\":\"CREDENTIAL_NOT_FOUND\",\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault/{id} - malformed id (400)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/not-a-number",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "not-a-number"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "400 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/not-a-number",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "not-a-number"
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"Validation failed\",\"data\":null,\"errorCode\":\"VALIDATION_FAILED\",\"errors\":[{\"field\":\"id\",\"message\":\"must be a valid Long\"}],\"timestamp\":\"2026-08-11T00:00:00Z\"}"
             }
           ]
         },
@@ -1126,6 +1384,65 @@
               ],
               "cookie": [],
               "body": "{\"success\":true,\"message\":\"Search results\",\"data\":[],\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-10T19:53:41.899480810Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault/search - missing q param (400)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "search"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "400 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/search",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "search"
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"Validation failed\",\"data\":null,\"errorCode\":\"VALIDATION_FAILED\",\"errors\":[{\"field\":\"q\",\"message\":\"must not be missing\"}],\"timestamp\":\"2026-08-11T00:00:00Z\"}"
             }
           ]
         },
