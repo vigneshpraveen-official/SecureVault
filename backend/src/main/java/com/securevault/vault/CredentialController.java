@@ -10,6 +10,7 @@ import com.securevault.vault.dto.CredentialSummaryResponse;
 import com.securevault.vault.dto.CredentialUpdateRequest;
 import com.securevault.vault.dto.PasswordHistoryVersionResponse;
 import com.securevault.vault.dto.VaultHealthResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -34,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/vault")
 @RequiredArgsConstructor
 @Validated
+@Tag(name = "Vault", description = "Credential CRUD, search, trash, and password history")
 public class CredentialController {
 
     private final CredentialService credentialService;

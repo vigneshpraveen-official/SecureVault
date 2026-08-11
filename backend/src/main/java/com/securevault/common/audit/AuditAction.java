@@ -5,5 +5,8 @@ public enum AuditAction {
     UPDATE,
     DELETE,
     RESTORE,
-    PERMANENT_DELETE
+    PERMANENT_DELETE,
+    ACCESS,
+    SHARE,
+    REVOKE
 }

@@ -5,6 +5,7 @@ import com.securevault.password.dto.GenerateRequest;
 import com.securevault.password.dto.GenerateResponse;
 import com.securevault.password.dto.PasswordStrengthRequest;
 import com.securevault.password.dto.PasswordStrengthResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/password")
 @RequiredArgsConstructor
+@Tag(name = "Password", description = "Strength analysis and SecureRandom-based generation")
 public class PasswordController {
 
     private final PasswordStrengthService passwordStrengthService;

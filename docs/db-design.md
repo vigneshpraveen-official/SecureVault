@@ -98,41 +98,84 @@ ordering mistake instead of silently cascading regardless of order. Full reasoni
 **Index:** `credential_id`, since every real query here (reuse-check top-5, version listing,
 permanent-delete cleanup) filters by it.
 
-## Tables documented now, migrated later
+## `credential_shares` — implemented in V5 (S5.1)
 
-### `credential_shares` (Phase 5, S5.1)
-`id` BIGSERIAL PK · `credential_id` BIGINT FK → `credentials(id)` ·
-`owner_id` BIGINT FK → `users(id)` · `shared_with_user_id` BIGINT FK → `users(id)` ·
-`permission` VARCHAR(10) NOT NULL (`READ`\|`EDIT`) · `shared_at` TIMESTAMPTZ NOT NULL ·
-`expires_at` TIMESTAMPTZ nullable · `active` BOOLEAN NOT NULL DEFAULT true.
-Unique `(credential_id, shared_with_user_id)` filtered `WHERE active` — enforces "no duplicate
-active share" without blocking re-sharing after a revoke.
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PRIMARY KEY | |
+| credential_id | BIGINT | NOT NULL, FK → `credentials(id)` | no `ON DELETE CASCADE` — permanent delete cleans these up explicitly, same reasoning as `password_history` |
+| owner_id | BIGINT | NOT NULL, FK → `users(id)` | |
+| shared_with_user_id | BIGINT | NOT NULL, FK → `users(id)` | |
+| permission | VARCHAR(10) | NOT NULL | `READ`\|`EDIT` |
+| shared_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
+| expires_at | TIMESTAMPTZ | nullable | |
+| active | BOOLEAN | NOT NULL, DEFAULT true | soft revoke — set false, never deleted |
 
-### `login_attempts` (Phase 5, S5.5)
-`id` BIGSERIAL PK · `email` VARCHAR(150) NOT NULL (kept even if no matching user, to detect
-enumeration attempts) · `successful` BOOLEAN NOT NULL · `ip_address` VARCHAR(45) ·
-`user_agent` VARCHAR(255) · `attempted_at` TIMESTAMPTZ NOT NULL · `failure_reason` VARCHAR(255).
+**Unique** `(credential_id, shared_with_user_id)` **filtered `WHERE active`** — enforces "no
+duplicate active share" (M-45) without blocking re-sharing after a revoke, since the partial
+index simply ignores inactive rows. **Indexes:** `shared_with_user_id`, `credential_id`,
+`owner_id` — one per direction the sharing feature queries from (received/sent/cleanup).
 
-### `devices` (Phase 5, S5.4)
-`id` BIGSERIAL PK · `user_id` BIGINT FK → `users(id)` · `device_fingerprint` VARCHAR(255)
-NOT NULL · `device_name` VARCHAR(150) · `ip_address` VARCHAR(45) · `last_seen_at` TIMESTAMPTZ ·
-`trusted` BOOLEAN NOT NULL DEFAULT false.
+## `refresh_tokens` — implemented in V6 (S5.2) + V7 (S5.4)
 
-### `refresh_tokens` (Phase 5, S5.2)
-`id` BIGSERIAL PK · `user_id` BIGINT FK → `users(id)` · `token_hash` VARCHAR(255) NOT NULL
-(the token itself is never stored, only its hash — same reasoning as account passwords) ·
-`expires_at` TIMESTAMPTZ NOT NULL · `revoked` BOOLEAN NOT NULL DEFAULT false ·
-`created_at` TIMESTAMPTZ NOT NULL. Redis holds the fast denylist; this table is the durable
-record (`docs/architecture.md`).
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PRIMARY KEY | |
+| user_id | BIGINT | NOT NULL, FK → `users(id)` | |
+| token_hash | VARCHAR(64) | NOT NULL, UNIQUE | SHA-256 hex of the raw token — the token itself is never stored, same principle as `password_hash` |
+| token_family | VARCHAR(36) | NOT NULL | UUID shared by every token descended from one login; reuse detection revokes the whole family in one statement |
+| device_fingerprint | VARCHAR(64) | nullable, **added in V7** | lets `DELETE /api/monitoring/devices/{id}` revoke exactly that device's sessions |
+| expires_at | TIMESTAMPTZ | NOT NULL | |
+| revoked | BOOLEAN | NOT NULL, DEFAULT false | |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
 
-### `notifications` (Phase 5, S5.6)
-`id` BIGSERIAL PK · `user_id` BIGINT FK → `users(id)` · `type` VARCHAR(50) NOT NULL ·
-`title` VARCHAR(150) NOT NULL · `message` TEXT · `read` BOOLEAN NOT NULL DEFAULT false ·
-`created_at` TIMESTAMPTZ NOT NULL.
+Redis holds the fast access-token denylist (`jwt:denylist:<jti>`, TTL = remaining token
+lifetime); this table is the durable refresh-token record. **Indexes:** `user_id`,
+`token_family`.
+
+## `mfa_backup_codes` and `devices` — implemented in V7 (S5.4)
+
+**`mfa_backup_codes`**: `id` BIGSERIAL PK · `user_id` BIGINT FK → `users(id)` · `code_hash`
+VARCHAR(60) NOT NULL (BCrypt, same treatment as account passwords) · `used` BOOLEAN NOT NULL
+DEFAULT false · `created_at` TIMESTAMPTZ NOT NULL. Index: `user_id`.
+
+**`devices`**: `id` BIGSERIAL PK · `user_id` BIGINT FK → `users(id)` · `device_fingerprint`
+VARCHAR(64) NOT NULL · `device_name` VARCHAR(150) · `ip_address` VARCHAR(45) · `user_agent`
+VARCHAR(255) · `last_seen_at` TIMESTAMPTZ NOT NULL · `trusted` BOOLEAN NOT NULL DEFAULT true ·
+`created_at` TIMESTAMPTZ NOT NULL. **Unique** `(user_id, device_fingerprint)` — one row per
+device per user, upserted on every login from that device.
+
+## `login_attempts` and `security_alerts` — implemented in V8 (S5.5)
+
+**`login_attempts`**: `id` BIGSERIAL PK · `email` VARCHAR(150) NOT NULL (kept even when it
+doesn't resolve to a user — the attempt itself is real regardless) · `successful` BOOLEAN
+NOT NULL · `ip_address` VARCHAR(45) · `user_agent` VARCHAR(255) · `attempted_at` TIMESTAMPTZ
+NOT NULL · `failure_reason` VARCHAR(100). Indexes: `email`, `attempted_at`.
+
+**`security_alerts`**: `id` BIGSERIAL PK · `user_id` BIGINT FK → `users(id)` · `type`
+VARCHAR(50) NOT NULL (`NEW_DEVICE`, `ELEVATED_FAILED_ATTEMPTS`, `BRUTE_FORCE_LOCKOUT`,
+`EXCESSIVE_VAULT_ACCESS`, `MASS_PERMANENT_DELETE`) · `severity` VARCHAR(20) NOT NULL
+(`LOW`\|`MEDIUM`\|`HIGH`) · `message` VARCHAR(500) NOT NULL · `resolved` BOOLEAN NOT NULL
+DEFAULT false · `created_at` TIMESTAMPTZ NOT NULL. Index: `user_id`.
+
+No dedicated `locked_at` column on `users` — the 30-minute auto-unlock (P5.5) is instead
+derived from `login_attempts`'s most recent failure timestamp for that email
+(`CustomUserDetailsService`), avoiding a column whose only purpose would be duplicating
+information `login_attempts` already has.
+
+## `notifications` — implemented in V9 (S5.6)
+
+`id` BIGSERIAL PK · `user_id` BIGINT FK → `users(id)` · `type` VARCHAR(50) NOT NULL
+(`NEW_DEVICE_LOGIN`, `SECURITY_ALERT`, `CREDENTIAL_SHARED`, `SHARE_REVOKED`,
+`PASSWORD_EXPIRY`) · `title` VARCHAR(200) NOT NULL · `message` VARCHAR(500) NOT NULL ·
+`read` BOOLEAN NOT NULL DEFAULT false · `created_at` TIMESTAMPTZ NOT NULL. Index: `user_id`.
+Populated exclusively by `NotificationEventListener`
+(`@TransactionalEventListener(phase = AFTER_COMMIT)`) — never written directly by the code
+that raises the underlying event (ADR-025).
 
 > Column types not pinned by master §10 (e.g. `ip_address`, `user_agent`, `device_fingerprint`,
-> `token_hash` lengths) are this session's own reasonable engineering choices, not mentor
-> requirements — flagged here so a later session can revisit them deliberately if needed.
+> `token_hash` lengths) were this session's own reasonable engineering choices, confirmed
+> workable by every Phase 5 migration applying and every live test passing against them.
 
 ---
 
@@ -184,10 +227,17 @@ User 1 ──< AuditLog
 User 1 ──< Device
 User 1 ──< Notification
 User 1 ──< RefreshToken
+User 1 ──< MfaBackupCode
+User 1 ──< LoginAttempt (by email, no FK)
+User 1 ──< SecurityAlert
 Credential 1 ──< CredentialShare >── 1 User (shared_with)
 ```
 
-Full DBML source (all 9 tables, every relation) lives in `docs/erd/securevault.dbml`.
+Full DBML source lives in `docs/erd/securevault.dbml` — not yet regenerated for Phase 5's four
+new tables (`credential_shares`, `refresh_tokens`, `mfa_backup_codes`, `devices`,
+`login_attempts`, `security_alerts`, `notifications`); the manual dbdiagram.io export step below
+was already outstanding since S0.3 and remains a developer action item, now covering nine
+additional tables' worth of relations rather than the original two.
 
 ### Exporting the ERD image from dbdiagram.io
 
@@ -201,4 +251,4 @@ Full DBML source (all 9 tables, every relation) lives in `docs/erd/securevault.d
    it isn't committed yet since I can't reach the dbdiagram.io web UI myself.
 
 ---
-_Session S0.3 — 2026-08-11._
+_Last updated: S5.8 — 2026-08-11._

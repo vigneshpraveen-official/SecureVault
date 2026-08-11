@@ -13,12 +13,17 @@ public class UserPrincipal implements UserDetails {
     private final Long id;
     private final String email;
     private final String passwordHash;
+    private final boolean accountNonLocked;
     private final Collection<? extends GrantedAuthority> authorities;
 
     public UserPrincipal(User user) {
         this.id = user.getId();
         this.email = user.getEmail();
         this.passwordHash = user.getPasswordHash();
+        // P5.5: reflects User.accountLocked as of construction time — CustomUserDetailsService
+        // auto-unlocks a stale (>30 min) lock BEFORE building this, so a caller never has to ask
+        // separately "is this actually still locked?"
+        this.accountNonLocked = !user.isAccountLocked();
         this.authorities = List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()));
     }
 
@@ -48,7 +53,7 @@ public class UserPrincipal implements UserDetails {
 
     @Override
     public boolean isAccountNonLocked() {
-        return true;
+        return accountNonLocked;
     }
 
     @Override

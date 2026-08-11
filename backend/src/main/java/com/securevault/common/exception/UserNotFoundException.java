@@ -13,4 +13,12 @@ public class UserNotFoundException extends BusinessException {
     public UserNotFoundException(Long id) {
         super(ErrorCode.USER_NOT_FOUND, HttpStatus.NOT_FOUND, "User not found: " + id);
     }
+
+    // P5.1: sharing looks a recipient up by email, not id — the sharing prompt (P5.1 step 2)
+    // requires resolving `sharedWithEmail`, so unlike login this endpoint does disclose whether
+    // an email is registered; that's an accepted, documented tradeoff for a feature that
+    // inherently needs it (ADR-023).
+    public UserNotFoundException(String email) {
+        super(ErrorCode.USER_NOT_FOUND, HttpStatus.NOT_FOUND, "User not found: " + email);
+    }
 }

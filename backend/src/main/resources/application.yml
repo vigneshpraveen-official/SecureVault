@@ -15,6 +15,25 @@ spring:
     enabled: true
     clean-disabled: true
     baseline-on-migrate: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  # Defaults target MailHog (docker-compose, no auth, no TLS) — S0.1's local dev SMTP. A real
+  # provider (Gmail etc, prod profile) needs auth=true + starttls, tracked as a P8.x TODO
+  # alongside the other prod-only overrides in application-prod.yml.
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
 
 server:
   port: ${SERVER_PORT:8080}

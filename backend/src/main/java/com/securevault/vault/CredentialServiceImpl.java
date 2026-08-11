@@ -6,8 +6,13 @@ import com.securevault.common.exception.AccessDeniedException;
 import com.securevault.common.exception.CredentialNotFoundException;
 import com.securevault.common.exception.PasswordReusedException;
 import com.securevault.common.response.PagedResponse;
+import com.securevault.common.util.Sha256;
+import com.securevault.monitoring.VaultAnomalyDetector;
 import com.securevault.password.PasswordStrengthService;
 import com.securevault.security.crypto.AesEncryptionService;
+import com.securevault.sharing.AccessEvaluator;
+import com.securevault.sharing.AccessLevel;
+import com.securevault.sharing.CredentialShareRepository;
 import com.securevault.user.User;
 import com.securevault.user.UserRepository;
 import com.securevault.vault.dto.CredentialCreateRequest;
@@ -17,9 +22,6 @@ import com.securevault.vault.dto.CredentialSummaryResponse;
 import com.securevault.vault.dto.CredentialUpdateRequest;
 import com.securevault.vault.dto.PasswordHistoryVersionResponse;
 import com.securevault.vault.dto.VaultHealthResponse;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -29,6 +31,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -52,9 +56,18 @@ public class CredentialServiceImpl implements CredentialService {
     private final PasswordStrengthService passwordStrengthService;
     private final AuditService auditService;
     private final PasswordHistoryRepository passwordHistoryRepository;
+    private final AccessEvaluator accessEvaluator;
+    private final CredentialShareRepository credentialShareRepository;
+    private final VaultAnomalyDetector vaultAnomalyDetector;
 
+    // allEntries=true clears the WHOLE vaultList cache region, not just this user's keys (P5.3) —
+    // deliberate: Spring Cache has no built-in "evict every key matching this user's prefix"
+    // primitive without hand-rolling key tracking, and correctness (never serve a stale list to
+    // anyone) matters far more here than the minor cost of other users' next list call being a
+    // cache miss too.
     @Override
     @Transactional
+    @CacheEvict(cacheNames = "vaultList", allEntries = true)
     public CredentialResponse create(Long userId, CredentialCreateRequest request) {
         User owner = userRepository.getReferenceById(userId);
 
@@ -86,14 +99,39 @@ public class CredentialServiceImpl implements CredentialService {
     }
 
     @Override
+    @Transactional
     public CredentialDetailResponse getByIdForUser(Long id, Long userId) {
-        Credential credential = loadOwned(id, userId);
+        // Owner or an active, unexpired READ/EDIT share (P5.1/M-44) — loadOwned's strict
+        // ownership-only check would 403 a legitimately shared READ user, so this path goes
+        // through the AccessEvaluator instead.
+        Credential credential = loadWithAccess(id, userId, false);
+        vaultAnomalyDetector.recordAccess(userId); // P5.5 rule 3 — tracked by accessor, not owner
         String decrypted = aesEncryptionService.decrypt(credential.getEncryptedPassword());
-        // DEBUG, not INFO (P4.7/M-47) — a single-credential reveal is developer/traffic detail,
-        // not a state-changing business event the way create/update/delete are; logging every
-        // read at INFO would also be by far the noisiest line in this class. Never logs the
-        // decrypted password itself.
-        log.debug("Credential read: id={}, userId={}", id, userId);
+        if (!credential.getUser().getId().equals(userId)) {
+            // Shared access is audited synchronously with the accessor's id, same transaction as
+            // the read (P5.1 step 5) — distinct from the DEBUG-only owner-read path below, which
+            // stays as-is (P4.7) since it isn't a cross-user event worth a compliance record.
+            auditService.record(
+                    AuditAction.ACCESS,
+                    "CREDENTIAL",
+                    credential.getId(),
+                    userId,
+                    "shared access by userId="
+                            + userId
+                            + ", ownerId="
+                            + credential.getUser().getId());
+            log.info(
+                    "Shared credential accessed: id={}, accessorId={}, ownerId={}",
+                    id,
+                    userId,
+                    credential.getUser().getId());
+        } else {
+            // DEBUG, not INFO (P4.7/M-47) — a single-credential reveal is developer/traffic detail,
+            // not a state-changing business event the way create/update/delete are; logging every
+            // read at INFO would also be by far the noisiest line in this class. Never logs the
+            // decrypted password itself.
+            log.debug("Credential read: id={}, userId={}", id, userId);
+        }
         return credentialMapper.toDetailResponse(credential, decrypted);
     }
 
@@ -103,7 +141,14 @@ public class CredentialServiceImpl implements CredentialService {
         return passwordHistoryRepository.findVersionsByCredentialId(id);
     }
 
+    // Cache key spans every parameter that changes the result set (P5.3) — omitting even one
+    // (e.g. `title`) would let two different filtered views collide on the same cache entry.
     @Override
+    @Cacheable(
+            cacheNames = "vaultList",
+            key =
+                    "#userId + ':' + #page + ':' + #size + ':' + #sortBy + ':' + #direction + ':'"
+                            + " + #category + ':' + #title + ':' + #username + ':' + #website")
     public PagedResponse<CredentialSummaryResponse> listForUser(
             Long userId,
             int page,
@@ -171,8 +216,10 @@ public class CredentialServiceImpl implements CredentialService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = "vaultList", allEntries = true)
     public CredentialResponse update(Long id, Long userId, CredentialUpdateRequest request) {
-        Credential credential = loadOwned(id, userId);
+        // Owner or an active EDIT share (P5.1/M-44) — a READ share hits AccessDeniedException.
+        Credential credential = loadWithAccess(id, userId, true);
 
         // Field names only, never values — this becomes the audit "details" string below, and
         // master §9 forbids logging/auditing a decrypted value (a title/category *name* is fine,
@@ -267,6 +314,7 @@ public class CredentialServiceImpl implements CredentialService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = "vaultList", allEntries = true)
     public void delete(Long id, Long userId) {
         // Soft delete (P4.3/M-37): loadOwned already excludes already-deleted rows, so this
         // naturally 404s on a credential that's already in the trash rather than re-deleting it.
@@ -285,6 +333,7 @@ public class CredentialServiceImpl implements CredentialService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = "vaultList", allEntries = true)
     public CredentialResponse restore(Long id, Long userId) {
         Credential credential = loadOwnedAny(id, userId);
         if (!credential.isDeleted()) {
@@ -323,6 +372,11 @@ public class CredentialServiceImpl implements CredentialService {
             throw new CredentialNotFoundException(id);
         }
         long historyRowsDeleted = passwordHistoryRepository.deleteByCredentialId(id);
+        // credential_shares has no ON DELETE CASCADE either (same reasoning as password_history,
+        // V5 migration) — without this, the delete below would fail on the FK. Also makes "no
+        // orphaned shares survive permanent delete" (M-45) an explicit call, not an accident of
+        // schema design.
+        long sharesDeleted = credentialShareRepository.deleteByCredentialId(id);
         String title = credential.getTitle();
         credentialRepository.delete(credential);
         // AuditLog has no FK to credentials (ADR-017) — this row survives the delete above,
@@ -332,8 +386,14 @@ public class CredentialServiceImpl implements CredentialService {
                 "CREDENTIAL",
                 id,
                 userId,
-                "title=" + title + ", historyRowsDeleted=" + historyRowsDeleted);
+                "title="
+                        + title
+                        + ", historyRowsDeleted="
+                        + historyRowsDeleted
+                        + ", sharesDeleted="
+                        + sharesDeleted);
         log.info("Credential permanently deleted: id={}, userId={}", id, userId);
+        vaultAnomalyDetector.recordPermanentDelete(userId); // P5.5 rule 4
     }
 
     @Override
@@ -366,7 +426,7 @@ public class CredentialServiceImpl implements CredentialService {
                 }
             }
             String plaintext = aesEncryptionService.decrypt(credential.getEncryptedPassword());
-            String hash = sha256Hex(plaintext);
+            String hash = Sha256.hex(plaintext);
             passwordHashCounts.merge(hash, 1, Integer::sum);
         }
 
@@ -442,20 +502,6 @@ public class CredentialServiceImpl implements CredentialService {
                 userId);
     }
 
-    private String sha256Hex(String plaintext) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(plaintext.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(hash.length * 2);
-            for (byte b : hash) {
-                hex.append(String.format("%02x", b));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 not available", e);
-        }
-    }
-
     // Excludes deleted rows — every "normal" operation (get/update/soft-delete/history) uses
     // this, so a soft-deleted credential is 404 everywhere except trash/restore/permanent-delete.
     private Credential loadOwned(Long id, Long userId) {
@@ -465,6 +511,22 @@ public class CredentialServiceImpl implements CredentialService {
                         .orElseThrow(() -> new CredentialNotFoundException(id));
         if (!credential.getUser().getId().equals(userId)) {
             throw new AccessDeniedException("You do not have access to this credential");
+        }
+        return credential;
+    }
+
+    // Owner OR an active, unexpired share via AccessEvaluator (P5.1/M-44) — used by the two read
+    // paths a shared user can legitimately reach (view, and update when EDIT). requireEdit=true
+    // additionally rejects a READ-only share. Delete/restore/permanent-delete/trash/history stay
+    // on loadOwned/loadOwnedAny below: owner-only, unaffected by sharing (M-45's matrix).
+    private Credential loadWithAccess(Long id, Long userId, boolean requireEdit) {
+        Credential credential =
+                credentialRepository
+                        .findByIdAndDeletedFalse(id)
+                        .orElseThrow(() -> new CredentialNotFoundException(id));
+        AccessLevel level = accessEvaluator.evaluate(id, credential.getUser().getId(), userId);
+        if (level == AccessLevel.NONE || (requireEdit && level == AccessLevel.READ)) {
+            throw new AccessDeniedException();
         }
         return credential;
     }

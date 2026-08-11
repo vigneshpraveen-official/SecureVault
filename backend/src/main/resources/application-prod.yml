@@ -11,3 +11,16 @@ spring:
 
 server:
   port: ${PORT:8080}
+
+# P5.8/ADR-025: Swagger UI and the raw OpenAPI JSON are disabled in prod — they enumerate every
+# route, request/response schema, and (via examples) plausible field shapes for an internet-facing
+# credential vault; that's free reconnaissance for an attacker with zero offsetting benefit once
+# the mentor demo (which needs it locally/staging) is over. springdoc.swagger-ui.enabled=false
+# still leaves the routes matched in SecurityConfig's permitAll list, but springdoc itself won't
+# serve anything at them once disabled — a 404, not a 401/403 leak of "this exists but you can't
+# see it."
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false

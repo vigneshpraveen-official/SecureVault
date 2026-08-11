@@ -15,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -29,8 +30,15 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+// @EnableMethodSecurity (P5.8) — new admin endpoints (AdminController's users/status/audit-logs)
+// use @PreAuthorize("hasRole('ADMIN')") directly rather than the manual role-check pattern
+// AdminController/MonitoringController used before this landed. That manual pattern stays where
+// it already is (a single endpoint serving both "own" and admin-scoped "all" data behind one
+// query param, not a whole-endpoint gate @PreAuthorize fits) — not worth touching working code
+// just to switch mechanisms.
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -126,8 +134,18 @@ public class SecurityConfig {
                                         .accessDeniedHandler(accessDeniedHandler))
                 .authorizeHttpRequests(
                         auth ->
+                                // P5.4: NOT a blanket "/api/auth/**" any more —
+                                // /api/auth/mfa/setup,
+                                // /verify, /disable operate on the authenticated user
+                                // (@AuthenticationPrincipal) and must 401 without a valid access
+                                // token, unlike register/login/refresh/logout/mfa-challenge, which
+                                // are the credential-establishing routes themselves.
                                 auth.requestMatchers(
-                                                "/api/auth/**",
+                                                "/api/auth/register",
+                                                "/api/auth/login",
+                                                "/api/auth/refresh",
+                                                "/api/auth/logout",
+                                                "/api/auth/mfa/challenge",
                                                 "/api/password/strength",
                                                 "/api/password/generate",
                                                 "/actuator/health",

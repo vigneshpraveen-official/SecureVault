@@ -25,6 +25,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
+    private final TokenDenylistService tokenDenylistService;
 
     @Override
     protected void doFilterInternal(
@@ -44,7 +45,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String email = jwtService.extractUsername(token);
             if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(email);
-                if (jwtService.isTokenValid(token, userDetails)) {
+                // Denylist check (P5.2) — a token that is otherwise perfectly valid but whose jti
+                // was denylisted on logout must be treated exactly like an expired one: leave the
+                // request unauthenticated rather than throwing, same as the catch block below.
+                if (jwtService.isTokenValid(token, userDetails)
+                        && !tokenDenylistService.isDenylisted(jwtService.extractJti(token))) {
                     UsernamePasswordAuthenticationToken authToken =
                             new UsernamePasswordAuthenticationToken(
                                     userDetails, null, userDetails.getAuthorities());

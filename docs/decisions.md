@@ -505,3 +505,274 @@ through `LogMasking` or be omitted entirely — this is a review-time check, not
 compiler enforces. Any new `@Async` work added later automatically gets correlation-id
 propagation for free via `MdcTaskDecorator`, as long as it goes through the shared "taskExecutor"
 bean.
+
+### ADR-023 — Credential sharing: single AccessEvaluator, share-403 collapse, explicit cascade cleanup
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P5.1/M-42..M-45 requires a single authorisation decision point every vault
+operation goes through (owner → allow; else active unexpired share + permission → allow/deny;
+else 403), plus business rules for self-share, duplicate share, and what happens to shares when
+a credential is soft- or permanently-deleted.
+**Decision:** `AccessEvaluator`/`AccessLevel` (sharing package) takes primitive `credentialId`,
+`ownerId`, `userId` — never entity types — so `sharing` has no compile dependency on `vault`'s
+entities, only the reverse (`CredentialServiceImpl` calls into `sharing`). `CredentialServiceImpl`
+gained a `loadWithAccess(id, userId, requireEdit)` path used only by `getByIdForUser`/`update`;
+`delete`/`restore`/`permanentDelete`/history stay strictly owner-only via the existing
+`loadOwned`/`loadOwnedAny`. For `PUT`/`DELETE /api/share/{shareId}`, a shareId that doesn't exist
+and one that exists but belongs to someone else both collapse to the same 403 `ACCESS_DENIED` —
+master §9's fixed `ErrorCode` enum has no `SHARE_NOT_FOUND`, and this avoids disclosing whether a
+given shareId exists at all (same anti-enumeration spirit as login never distinguishing
+unknown-email from wrong-password). `UserNotFoundException` gained a `String email` constructor
+overload for resolving `sharedWithEmail` — a deliberate, accepted exception to login's
+never-disclose-existence pattern, since sharing inherently requires telling the sharer whether the
+target email is registered. `credential_shares.credential_id` has no `ON DELETE CASCADE` (same
+reasoning as `password_history`, ADR-019) — `permanentDelete()` calls
+`credentialShareRepository.deleteByCredentialId(id)` explicitly, before deleting the credential,
+making "no orphaned shares survive permanent delete" an explicit code decision, not implicit
+schema behaviour. Revoke is soft (`active=false`), idempotent, and a partial unique index
+`(credential_id, shared_with_user_id) WHERE active` allows re-sharing after a revoke without
+blocking on old inactive rows.
+**Alternatives:** `AccessEvaluator` taking `Credential`/`User` entities (rejected — creates a
+`sharing↔vault` circular type dependency); a new `SHARE_NOT_FOUND` error code (rejected — same
+reasoning as ADR-018's restore no-op: the fixed enum is a locked decision, inventing one needs an
+ADR + explicit sign-off beyond this session, and 403 already conveys "you can't do this" without
+a new code); `ON DELETE CASCADE` on `credential_shares` (rejected — same reasoning as
+`password_history`: explicit cleanup in code is auditable and ordered, an implicit cascade is not).
+**Consequences:** Every new vault operation must decide, explicitly, whether it goes through
+`loadWithAccess` (shareable) or `loadOwned`/`loadOwnedAny` (owner-only) — there is no default.
+Verified live: the full master §12 matrix (owner/READ/EDIT/unrelated/revoked/expired × view/
+update/delete) plus soft-delete and permanent-delete interactions with active shares, all
+behaving exactly as specified.
+
+### ADR-024 — Refresh token rotation, reuse detection, and Redis denylist fail-open policy
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P5.2 requires access+refresh tokens, rotation on refresh, reuse-detection that
+revokes "the whole token family," and an access-token denylist for logout — plus an explicit
+fail-open/fail-closed decision if Redis is down.
+**Decision:** Refresh tokens are opaque `SecureRandom` strings (`TokenHasher.generateRawToken`,
+32 bytes, base64url), never JWTs — only their SHA-256 hash is stored (`refresh_tokens.token_hash`),
+mirroring `password_hash`. Every token minted from one login shares a `token_family` UUID;
+rotation keeps the family, reuse of an already-revoked token revokes every token in that family
+via one `UPDATE ... WHERE token_family = :family AND revoked = false` — found live, this only
+actually works with `@Transactional(propagation = ..., noRollbackFor = TokenInvalidException.class)`
+on `RefreshTokenServiceImpl.refresh()`: Spring's default rollback-on-any-RuntimeException would
+otherwise undo the family revoke the instant `TokenInvalidException` is thrown to signal the
+reuse to the caller, silently defeating the entire feature (confirmed by replaying a token twice
+before the fix — the second replay still succeeded). Access tokens gained a `jti` (registered JWT
+ID claim, `Jwts.builder().id(...)`) and `extractExpiration()`; `TokenDenylistServiceImpl`
+(`jwt:denylist:<jti>`, TTL = remaining token lifetime) is checked by `JwtAuthenticationFilter`
+alongside the existing signature/expiry check. **Fail-open, explicitly**: if Redis is unreachable,
+`isDenylisted()` returns false and `denylist()` no-ops after a WARN — a fail-closed design would
+make a Redis outage take down every authenticated request in the app; the accepted exposure is
+narrow (a logged-out token keeps working for at most its remaining ≤15-minute natural lifetime,
+only if Redis happens to be down at that exact moment). Verified live by stopping the Redis
+container mid-session: login and authenticated calls kept working, with the documented WARN lines
+appearing exactly as designed.
+**Alternatives:** Fail-closed on Redis unavailability (rejected — availability tradeoff judged
+worse than the narrow, time-bounded exposure, and documented here specifically so it's a
+deliberate choice, not a silent default); JWT refresh tokens instead of opaque+hash (rejected —
+opaque tokens are the only way to guarantee server-side revocability without also tracking every
+issued JWT's state, which is what a denylist already does for access tokens — no reason to
+duplicate the pattern for refresh tokens too).
+**Consequences:** Any future `@Transactional` method that raises a business exception *after* a
+side effect that must survive the exception needs the same `noRollbackFor` treatment — this is
+now a known pattern in this codebase, not just a one-off fix.
+
+### ADR-025 — Proxy and transaction-boundary lessons: cache-vs-authorization ordering, AFTER_COMMIT listeners, Jackson generics, Swagger in prod
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** Three related "found live, not by inspection" bugs surfaced across S5.3/S5.6/S5.7,
+all rooted in the same class of issue — Spring proxies and transaction lifecycle doing something
+non-obvious at the exact boundary a naive implementation assumed was simple. Grouped into one ADR
+since they're the same *lesson* even though they hit different features. A fourth, unrelated
+session-close decision (Swagger exposure in prod) is appended here rather than given its own ADR.
+**Decision (1 — cache-bypasses-authorization):** `@Cacheable` intercepts a method call *before*
+the method body runs; if the ADMIN-role check lives inside a cached method, a cache hit for a
+non-cached-key... more precisely, if the check and the cached computation are the *same* method,
+a warm cache entry serves the response without the check ever re-running. Found live testing
+`GET /api/admin/stats`: an admin's call warmed a constant-keyed cache entry, and a genuinely
+different non-admin user's very next call (same 2-minute TTL window) got 200 with real stats
+instead of 403. **Fixed** by splitting into `AdminController.stats()` (never cached, runs the
+`@PreAuthorize`/role check every single call) delegating to `AdminStatsServiceImpl.computeStats()`
+(cached, contains no per-caller authorization logic at all). Re-verified live: a fresh non-admin
+user still got 403 immediately after an admin had already warmed the cache.
+**Decision (2 — AFTER_COMMIT listeners need REQUIRES_NEW):** `@TransactionalEventListener(phase =
+AFTER_COMMIT)` runs synchronously in the same thread, but Spring's commit sequence calls
+`triggerAfterCommit()` *before* `cleanupAfterCompletion()` unbinds the just-finished transaction's
+resources — so a plain `@Transactional` (default `REQUIRED`) call made from inside the listener
+can silently "participate" in that already-committed, about-to-be-torn-down transaction instead of
+starting fresh. Found live: `NotificationServiceImpl.create()` returned normally with a `null` id,
+no SQL `INSERT` ever reached Postgres, and no exception anywhere — the entity was built and
+"saved" into a persistence context that was never really live for writing. **Fixed** with
+`@Transactional(propagation = Propagation.REQUIRES_NEW)` on `create()`, forcing a genuinely new
+transaction regardless of the thread's residual state. Re-verified live across all five
+notification triggers (new-device, security alert, credential-shared, share-revoked,
+password-expiry) — every one now persists correctly and dispatches a real email through MailHog.
+**Decision (3 — Jackson default typing and Java records):** `GenericJackson2JsonRedisSerializer`
+needs `ObjectMapper.DefaultTyping.EVERYTHING`, not `NON_FINAL` — Java records are implicitly
+`final`, so `NON_FINAL` typing omits the `@class` type id for every record-typed DTO nested inside
+a generically-typed field (e.g. `PagedResponse<T>`'s `content: List<T>`), producing an
+`InvalidTypeIdException` on the very first cache *read* even though the *write* succeeded silently
+(no type id needed at write time, only at read time when Jackson must decide which concrete class
+to instantiate for an erased `Object`). Found live on the second call to a freshly-cached
+`GET /api/vault` (first call: miss, wrote fine; second call: hit, 500). **Fixed** by switching to
+`EVERYTHING`, and using a dedicated `ObjectMapper` for the cache serializer (not the shared REST
+one) so `@class` metadata never leaks into an actual JSON HTTP response.
+**Decision (4 — Swagger disabled in prod):** `springdoc.swagger-ui.enabled` /
+`springdoc.api-docs.enabled` are `false` under the `prod` profile (`application-prod.yml`) —
+enumerating every route and schema is free reconnaissance for an internet-facing credential vault
+with no offsetting benefit once the mentor demo (local/staging) is done.
+**Alternatives:** For (1), leaving the check inside the cached method and accepting the staleness
+risk (rejected outright — this is an authorization bypass, not a UX nit, no tradeoff is
+acceptable). For (2), `REQUIRED` with a manual `TransactionTemplate`/explicit flush (rejected —
+`REQUIRES_NEW` is the standard, documented fix for exactly this Spring gotcha and needs no extra
+scaffolding). For (3), `NON_FINAL` with a custom mixin forcing type info onto specific DTOs
+(rejected — more moving parts than one enum value change, for no benefit at this project's scale).
+**Consequences:** Any future `@Cacheable` method must be checked for whether it also gates access
+— if so, the check moves to an uncached caller. Any future `@TransactionalEventListener(AFTER_COMMIT)`
+handler that writes data needs `REQUIRES_NEW` on the write, not `REQUIRED`. Any new Redis-cached
+DTO that's a record nested inside a generic container is already covered by the `EVERYTHING`
+typing — no per-DTO action needed.
+
+### ADR-026 — MFA: TOTP library, AES-encrypted secret, retry-safe challenge tokens, Redis replay guard
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P5.4 requires TOTP via a maintained library, a short-lived MFA challenge exchanged
+separately from the main login call, backup codes, ±1 time-step clock-skew tolerance, and replay
+protection against reusing an already-accepted code within its own validity window.
+**Decision:** `dev.samstevens.totp` (+ `com.google.zxing` for the QR PNG) — a maintained,
+purpose-built RFC 6238 library rather than hand-rolled HMAC-based OTP. The secret is AES-256-GCM
+encrypted (`User.mfaSecret`, same format/service as vault passwords, D-05) — never BCrypt, which
+would make verifying a live code against it structurally impossible. `DefaultCodeVerifier` is
+configured with `setAllowedTimePeriodDiscrepancy(1)` explicitly rather than relying on the
+library's own default. The login-time MFA challenge token (`MfaChallengeServiceImpl`, Redis,
+`mfa:challenge:<token>` → userId, 2-minute TTL) is **peeked, not consumed, on every attempt** —
+found live: an initial `consumeChallenge()`-on-every-call design deleted the token the moment a
+*wrong* code was tried, so one mistyped digit force-restarted the entire login from password entry
+instead of allowing a retry within the 2-minute window. **Fixed** by splitting into
+`peekChallenge()` (read-only, used to resolve the userId before verifying the code) and
+`invalidateChallenge()` (called only after a code actually verifies), re-verified live: a wrong
+code followed by a correct code against the *same* challenge token now succeeds. Replay protection
+for TOTP codes (not backup codes, which are separately single-use via BCrypt+`used` flag) is a
+Redis key `mfa:used:<userId>:<code>`, TTL 90s (3 time-steps, covering the full ±1-discrepancy
+validity window) — set only after a code verifies, checked before every verification attempt.
+**Alternatives:** `googleauth` (rejected — `dev.samstevens.totp` bundles QR generation via zxing
+directly, one less integration point); consuming the challenge token unconditionally (rejected —
+the bug above, found live, is exactly why); no replay guard, relying on `isValidCode`'s own
+time-window check alone (rejected — that check accepts the *same* code repeatedly within its
+window by design, which is precisely what M-... requires guarding against separately).
+**Consequences:** Any future short-lived, retry-tolerant challenge/token flow in this codebase
+should follow the peek/invalidate split, not a single consume-on-lookup method.
+
+### ADR-027 — Brute-force lockout derived from login_attempts (no locked_at column) + Redis anomaly-rate counters
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P5.5 requires locking an account after 5 consecutive failures within 15 minutes,
+automatic unlock after 30 minutes, a generic (non-disclosing) 401 for locked accounts, and four
+independently-testable anomaly rules (new device, elevated failures, excessive vault access, mass
+permanent delete), each raising a persisted `SecurityAlert`.
+**Decision:** `users.account_locked`/`failed_login_attempts` (present in the schema unmapped
+since S0.1) are now mapped, but there is **no `locked_at` column** — master §10's schema doesn't
+have one, and the 30-minute auto-unlock instead derives from `login_attempts`'s most recent
+failure timestamp for that email (`CustomUserDetailsService`, one indexed `MAX(attempted_at)`
+query, run on every login attempt before the password check). `UserPrincipal.isAccountNonLocked()`
+now reflects `user.accountLocked` as of construction time — since the auto-unlock check runs
+*before* `UserPrincipal` is built, Spring's `DaoAuthenticationProvider` throws `LockedException`
+pre-authentication for a still-locked account, and `AuthController` catches it and throws the
+exact same `InvalidCredentialsException` a wrong password would — a locked account is
+indistinguishable from a wrong password from the outside, same anti-enumeration reasoning as
+unknown-email. Anomaly rules 3 and 4 (excessive vault access, mass permanent delete) use Redis
+rolling counters (`VaultAnomalyDetectorImpl`, `INCR`+`EXPIRE`, fixed window/threshold,
+`SETNX`-guarded so the alert itself fires once per window, not once per request past the
+threshold) rather than a Postgres-backed rate table — the same category of cheap, ephemeral,
+high-frequency state as the MFA replay guard and JWT denylist, not a durable record in its own
+right (the `SecurityAlert` it raises *is* the durable record).
+**Alternatives:** A new `locked_at` column (rejected — the exact information already exists,
+derivably, in `login_attempts`; adding a column to duplicate it is schema bloat for no new
+capability); a Postgres table for the anomaly rate counters (rejected — Redis `INCR`+`EXPIRE` is
+the textbook fit for "count events in a rolling window," and Postgres would need its own
+window-cleanup job Redis's TTL gives for free).
+**Consequences:** Any future per-user rate-limited counter in this codebase should default to the
+same Redis `INCR`+`EXPIRE`+`SETNX`-guard pattern rather than inventing a new mechanism.
+
+### ADR-028 — Notification event model: SecurityAlertRaisedEvent reuse, password-expiry scheduled sweep
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P5.6 requires an in-app `Notification` + async email for five triggers (new-device
+login, security alert, credential shared, share revoked, password expiry >90 days), fired only
+after the triggering transaction actually commits.
+**Decision:** `NotificationEventListener` is one `@Component` with four
+`@TransactionalEventListener(phase = AFTER_COMMIT)` handlers — `onSecurityAlert` covers **two**
+of the five triggers (new-device and security-alert) by branching on `AlertType.NEW_DEVICE`,
+since S5.5 already raises a `SecurityAlert`/publishes `SecurityAlertRaisedEvent` for both; no
+separate "new device" event was introduced. `CredentialSharedEvent`/`ShareRevokedEvent`
+(published from `CredentialShareServiceImpl`) and `PasswordExpiryWarningEvent` (published from a
+new `PasswordExpiryScheduler`, `@Scheduled(cron = "${app.notification.password-expiry-cron:0 0 6
+* * *}")`, default once daily, overridable via property for local verification without touching
+the committed schedule) cover the remaining three. The password-expiry sweep is rate-limited to
+once per user per 7 days via a Redis `SETNX` guard (same pattern as ADR-027's anomaly counters) —
+without it, a daily sweep would re-notify about the same stale credentials every single day.
+Emails go through `EmailServiceImpl`, `@Async("taskExecutor")`, `JavaMailSender` against MailHog
+locally (`spring.mail.host=localhost:1025`, no auth/TLS) — failures are caught and logged at WARN,
+never propagated, since by the time an email is being sent the triggering business transaction has
+already committed and there is nothing left to roll back.
+**Alternatives:** A separate `NewDeviceLoginEvent` distinct from `SecurityAlertRaisedEvent`
+(rejected — would duplicate exactly what `SecurityAlertRaisedEvent` already carries for that
+specific alert type, for no behavioural difference); firing password-expiry notifications
+on-demand per credential rather than via a scheduled sweep (rejected — "credentials older than 90
+days" is inherently a state-based condition to detect proactively, not something a specific user
+action triggers).
+**Consequences:** Any future notification trigger tied to an existing `SecurityAlert` type should
+branch inside `onSecurityAlert` rather than adding a new event; anything not already modeled as a
+security alert gets its own event, published from wherever the business transaction actually
+commits.
+
+### ADR-029 — Dashboard aggregation: database-level GROUP BY over in-memory grouping, 2-minute cache TTL
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P5.7 requires read-only aggregate dashboard endpoints computed via database
+aggregation, not by loading entities into memory, cached briefly with a documented staleness
+window.
+**Decision:** `byCategory`/favorites/total counts use grouped `COUNT(...)`/`GROUP BY` JPQL
+queries (`CredentialRepository.countByCategoryForUser`, `countByUserIdAndDeletedFalse*`) — no
+full-vault load followed by an in-memory `Collectors.groupingBy`. The one deliberate exception is
+`passwordHealth()`'s "top 5 items to fix" ranking, which sorts a single user's own already-bounded
+active-credential list — the exact same list `CredentialServiceImpl.getHealth()` already loads for
+that same user (S3.3 precedent); this is a bounded, per-user operation, not the whole-table scan
+the "aggregate in the database" rule is aimed at preventing. `summary`/`passwordHealth` are cached
+2 minutes (RedisCacheConfig's `dashboard` region, shared with `AdminStatsServiceImpl`); staleness
+is **time-based only, no active eviction** on vault/share mutations — unlike `vaultList`'s
+immediate eviction (a real security/correctness concern there), a dashboard being up to 2 minutes
+stale is an accepted, documented UX tradeoff. `recentActivity` is explicitly **not** cached — a
+2-minute-stale count reads as normal, but a just-performed action missing from "recent activity"
+reads as broken to the person who just did it.
+**Alternatives:** Evicting the `dashboard` cache on every vault/share mutation, mirroring
+`vaultList` (rejected — would require touching every mutation across `vault`, `sharing`, and
+`monitoring`, for a widget where a few minutes of staleness is the explicitly accepted design per
+P5.7's own wording); caching `recentActivity` too (rejected — see above).
+**Consequences:** Any new dashboard aggregate should default to a grouped database query and the
+2-minute `dashboard` cache region unless it's an activity-feed-shaped endpoint, which stays
+uncached by the same reasoning as `recentActivity`.
+
+### ADR-030 — Admin module: manual role checks retired in favour of @PreAuthorize, method security enabled
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P5.8 requires `GET /api/admin/users` (paginated, searchable), `PUT
+/api/admin/users/{id}/status`, `GET /api/admin/audit-logs` (filterable by user/action/date range),
+all `@PreAuthorize("hasRole('ADMIN')")`, with method security enabled if not already.
+**Decision:** `@EnableMethodSecurity` added to `SecurityConfig` (Spring Security 6's replacement
+for the older `@EnableGlobalMethodSecurity`). All four `AdminController` routes
+(`stats`/`users`/`users/{id}/status`/`audit-logs`) use `@PreAuthorize("hasRole('ADMIN')")`,
+replacing `AdminController`'s earlier manual `requireAdmin()` check from S5.7 — now that method
+security exists, there's no reason for two different admin-gating mechanisms in the same
+controller. `MonitoringController`'s manual `?all=true` role check (S5.5) is deliberately **left
+as-is**: it gates one query-parameter-driven branch inside an endpoint every authenticated user can
+call, not a whole-endpoint 403, so `@PreAuthorize` doesn't fit the same way. User search
+(`UserSpecifications.emailOrNameContains`) and audit-log filtering
+(`AuditLogSpecifications.performedBy`/`action`/`timestampAfter`/`timestampBefore`) both extend
+`JpaSpecificationExecutor`, composing optional filters exactly like `CredentialSpecifications`
+(D-12/ADR-021) — no string-concatenated JPQL. `springdoc-openapi-starter-webmvc-ui` (2.8.5) is
+configured with a `bearerAuth` HTTP/bearer security scheme so Swagger UI's Authorize button works
+with a raw access token, and every controller carries an explicit `@Tag` so Swagger UI groups
+routes by feature module rather than by raw controller class name.
+**Alternatives:** Converting `MonitoringController`'s `?all=true` check to `@PreAuthorize` too
+(rejected — it isn't a whole-endpoint gate, and forcing it into that shape would need splitting
+one endpoint into two just to fit the annotation, for no real benefit); leaving `AdminController`'s
+manual check in place alongside the three new `@PreAuthorize` routes (rejected — inconsistent
+within the same controller for no reason once method security exists).
+**Consequences:** Any new admin-only, whole-endpoint route should use `@PreAuthorize`, not a
+manual role check — the manual pattern is now reserved specifically for "one endpoint, multiple
+authorization-scoped branches" cases like `MonitoringController`'s.

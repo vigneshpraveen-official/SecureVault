@@ -3,6 +3,7 @@ package com.securevault.user;
 import com.securevault.common.response.ApiResponse;
 import com.securevault.user.dto.UserRegisterRequest;
 import com.securevault.user.dto.UserResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@Tag(name = "Auth", description = "Registration, login, refresh/logout, and MFA")
 public class UserController {
 
     private final UserService userService;

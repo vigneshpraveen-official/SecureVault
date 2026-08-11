@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 /**
@@ -52,7 +53,16 @@ public class PasswordStrengthServiceImpl implements PasswordStrengthService {
         }
     }
 
+    // P5.3: keyed by a SHA-256 hash of the password (com.securevault.common.util.Sha256), NEVER
+    // by or storing the password itself — the cached value is only the deterministic analysis
+    // result (score/strength/entropy/feedback), already no more sensitive than the strengthScore
+    // column CredentialServiceImpl persists to Postgres in plaintext-adjacent form today. Short
+    // TTL (RedisCacheConfig) since a stale hit is indistinguishable from a fresh one for a pure
+    // function of the input.
     @Override
+    @Cacheable(
+            cacheNames = "passwordStrength",
+            key = "T(com.securevault.common.util.Sha256).hex(#password)")
     public PasswordStrengthResponse analyze(String password) {
         List<String> feedback = new ArrayList<>();
         int score = 0;

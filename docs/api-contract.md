@@ -12,7 +12,7 @@ the same `ApiResponse` envelope (P2.3/M-27).
 |---|---|---|---|---|---|---|
 | GET | `/actuator/health` | none | — | `{ "status": "UP" }` | 200 | — |
 | POST | `/api/auth/register` | none | `UserRegisterRequest` (fullName, email, password — full validation, see `docs/validation.md`) | `ApiResponse<UserResponse>` (id, fullName, email, role, createdAt — never passwordHash) | 201, 400, 409 | `VALIDATION_FAILED`, `DUPLICATE_EMAIL` |
-| POST | `/api/auth/login` | none | `LoginRequest` (email, password — presence-only validation) | `ApiResponse<LoginResponse>` (accessToken, userId, fullName, email, role) | 200, 400, 401 | `VALIDATION_FAILED`, `INVALID_CREDENTIALS` |
+| POST | `/api/auth/login` | none | `LoginRequest` (email, password — presence-only validation) | `ApiResponse<LoginResponse>` (mfaRequired, mfaChallengeToken, accessToken, refreshToken, userId, fullName, email, role — **as of P5.4**: if MFA is enabled, password-correct returns `mfaRequired=true` + a 2-min challenge token and no tokens; exchange via `POST /api/auth/mfa/challenge`) | 200, 400, 401 | `VALIDATION_FAILED`, `INVALID_CREDENTIALS` |
 | POST | `/api/password/strength` | none (public utility) | `PasswordStrengthRequest` (password — `@NotBlank` only, deliberately unrestricted) | `ApiResponse<PasswordStrengthResponse>` (score 0-5, strength label, entropyBits, feedback[]) — never logs/persists the password (docs/password-policy.md) | 200, 400 | `VALIDATION_FAILED` |
 | POST | `/api/password/generate` | none (public utility) | `GenerateRequest` (length 8-128, includeUppercase/Lowercase/Numbers/Symbols, excludeAmbiguous — at least one class required) | `ApiResponse<GenerateResponse>` (password, strength — reuses the strength endpoint's scoring) | 200, 400 | `VALIDATION_FAILED` |
 | POST | `/api/vault` | JWT (Bearer) | `CredentialCreateRequest` (title, username, password, websiteUrl, notes, category) | `ApiResponse<CredentialResponse>` (id, title, username, websiteUrl, notes, category, favorite, strengthScore, createdAt, updatedAt — never password) | 201, 400, 401 | `VALIDATION_FAILED`, `INVALID_CREDENTIALS` |
@@ -27,6 +27,34 @@ the same `ApiResponse` envelope (P2.3/M-27).
 | DELETE | `/api/vault/{id}` | JWT (Bearer) | — | none — the sole endpoint exempt from the `ApiResponse` envelope (HTTP 204 forbids a body, RFC 9110 §15.3.5). **Soft delete as of P4.3** — sets `deleted=true`, moves the credential to the trash, does not remove the row | 204, 401, 403, 404 | `INVALID_CREDENTIALS`, `ACCESS_DENIED`, `CREDENTIAL_NOT_FOUND` |
 | DELETE | `/api/vault/{id}/permanent` | JWT (Bearer) | — | none (204) — hard-deletes the credential AND its password history in one transaction; only operates on an already-trashed credential (404 otherwise); audit logs are never touched (P4.3/M-39) | 204, 401, 403, 404 | `INVALID_CREDENTIALS`, `ACCESS_DENIED`, `CREDENTIAL_NOT_FOUND` |
 | POST | `/api/vault/recompute-strength` | JWT (Bearer) | — | `ApiResponse<Void>` — fire-and-forget; the recompute runs off the request thread (P4.6/M-40), so 202 means "started," not "done" | 202, 401 | `INVALID_CREDENTIALS` |
+| POST | `/api/share` | JWT (Bearer) | `ShareCreateRequest` (credentialId, sharedWithEmail, permission, expiresAt?) | `ApiResponse<ShareResponse>` — owner only (P5.1/M-45) | 201, 400, 401, 403, 404, 409 | `VALIDATION_FAILED`, `USER_NOT_FOUND`, `SELF_SHARE_NOT_ALLOWED`, `ACCESS_DENIED`, `CREDENTIAL_NOT_FOUND`, `SHARE_ALREADY_EXISTS` |
+| GET | `/api/share/received` | JWT (Bearer) | — | `ApiResponse<List<ShareResponse>>` — active, unexpired shares granted to the caller | 200, 401 | `INVALID_CREDENTIALS` |
+| GET | `/api/share/sent` | JWT (Bearer) | — | `ApiResponse<List<ShareResponse>>` — every active share the caller has granted, including expired-but-not-yet-revoked (flagged `expired: true`) | 200, 401 | `INVALID_CREDENTIALS` |
+| PUT | `/api/share/{shareId}` | JWT (Bearer) | `SharePermissionUpdateRequest` (permission) | `ApiResponse<ShareResponse>` — owner only; not-found and not-owned both collapse to 403 (ADR-023) | 200, 400, 401, 403 | `VALIDATION_FAILED`, `ACCESS_DENIED` |
+| DELETE | `/api/share/{shareId}` | JWT (Bearer) | — | none (204) — soft revoke (`active=false`); idempotent | 204, 401, 403 | `ACCESS_DENIED` |
+| POST | `/api/auth/refresh` | none (refresh token is the credential) | `RefreshRequest` (refreshToken) | `ApiResponse<TokenRefreshResponse>` (accessToken, refreshToken) — rotates the token; replay of an already-rotated token revokes the whole family (P5.2/ADR-024) | 200, 400, 401 | `VALIDATION_FAILED`, `TOKEN_INVALID`, `TOKEN_EXPIRED` |
+| POST | `/api/auth/logout` | none (works with or without a still-valid access token) | `LogoutRequest` (refreshToken) | `ApiResponse<Void>` — revokes the refresh token in Postgres and denylists the current access token's `jti` in Redis until its natural expiry | 200, 400 | `VALIDATION_FAILED` |
+| POST | `/api/auth/mfa/setup` | JWT (Bearer) | — | `ApiResponse<MfaSetupResponse>` (secret, otpauthUri, qrCodeDataUri) — generates and AES-encrypts a fresh TOTP secret; does not enable MFA yet | 200, 401 | `INVALID_CREDENTIALS` |
+| POST | `/api/auth/mfa/verify` | JWT (Bearer) | `MfaCodeRequest` (code) | `ApiResponse<MfaVerifyResponse>` (backupCodes[], shown exactly once) — confirms the setup code and enables MFA | 200, 400, 401 | `VALIDATION_FAILED`, `MFA_INVALID` |
+| POST | `/api/auth/mfa/disable` | JWT (Bearer) | `MfaCodeRequest` (code) | `ApiResponse<Void>` — requires a currently-valid code or backup code, not just an authenticated session | 200, 400, 401 | `VALIDATION_FAILED`, `MFA_INVALID` |
+| POST | `/api/auth/mfa/challenge` | none (challenge token is the credential) | `MfaChallengeRequest` (challengeToken, code) | `ApiResponse<LoginResponse>` (real tokens) — a wrong code does not burn the challenge token, allowing retries within its 2-minute TTL | 200, 400, 401 | `VALIDATION_FAILED`, `MFA_INVALID` |
+| GET | `/api/monitoring/devices` | JWT (Bearer) | — | `ApiResponse<List<DeviceResponse>>` — the caller's own known devices | 200, 401 | `INVALID_CREDENTIALS` |
+| DELETE | `/api/monitoring/devices/{id}` | JWT (Bearer) | — | none (204) — revokes every refresh token that device ever minted | 204, 401, 403 | `ACCESS_DENIED` |
+| GET | `/api/monitoring/login-attempts` | JWT (Bearer) | `?all=true` (ADMIN only, silently ignored otherwise) | `ApiResponse<List<LoginAttemptResponse>>` | 200, 401 | `INVALID_CREDENTIALS` |
+| GET | `/api/monitoring/alerts` | JWT (Bearer) | `?all=true` (ADMIN only) | `ApiResponse<List<SecurityAlertResponse>>` — unresolved | 200, 401 | `INVALID_CREDENTIALS` |
+| GET | `/api/monitoring/risk-score` | JWT (Bearer) | — | `ApiResponse<RiskScoreResponse>` (score 0-100, contributingFactors[]) — formula documented in `MonitoringController` (P5.5 step 5) | 200, 401 | `INVALID_CREDENTIALS` |
+| GET | `/api/notifications` | JWT (Bearer) | — | `ApiResponse<List<NotificationResponse>>` | 200, 401 | `INVALID_CREDENTIALS` |
+| PUT | `/api/notifications/{id}/read` | JWT (Bearer) | — | `ApiResponse<Void>` | 200, 401, 403 | `ACCESS_DENIED` |
+| PUT | `/api/notifications/read-all` | JWT (Bearer) | — | `ApiResponse<Void>` | 200, 401 | `INVALID_CREDENTIALS` |
+| GET | `/api/dashboard/summary` | JWT (Bearer) | — | `ApiResponse<DashboardSummaryResponse>` (totalCredentials, byCategory, favoritesCount, sharedInCount, sharedOutCount, trashCount, lastLogin) — cached 2 min (P5.3/S5.7) | 200, 401 | `INVALID_CREDENTIALS` |
+| GET | `/api/dashboard/password-health` | JWT (Bearer) | — | `ApiResponse<DashboardPasswordHealthResponse>` (band counts, reused/stale counts, healthScore, top 5 `topItemsToFix`) — cached 2 min | 200, 401 | `INVALID_CREDENTIALS` |
+| GET | `/api/dashboard/recent-activity` | JWT (Bearer) | — | `ApiResponse<List<RecentActivityResponse>>` — last 20 audit entries for the caller, human-readable, never cached | 200, 401 | `INVALID_CREDENTIALS` |
+| GET | `/api/dashboard/alerts` | JWT (Bearer) | — | `ApiResponse<List<SecurityAlertResponse>>` — same data as `/api/monitoring/alerts` | 200, 401 | `INVALID_CREDENTIALS` |
+| GET | `/api/admin/stats` | JWT (Bearer), `@PreAuthorize("hasRole('ADMIN')")` | — | `ApiResponse<AdminStatsResponse>` (totalUsers, activeSessions, failedLogins24h, unresolvedAlertsBySeverity, systemHealth) — cached 2 min; the ADMIN check itself is never cached (ADR-025) | 200, 401, 403 | `ACCESS_DENIED` |
+| GET | `/api/admin/users` | JWT (Bearer), ADMIN | `?page&size&search` | `ApiResponse<PagedResponse<AdminUserResponse>>` | 200, 401, 403 | `ACCESS_DENIED` |
+| PUT | `/api/admin/users/{id}/status` | JWT (Bearer), ADMIN | `AdminUserStatusUpdateRequest` (locked) | `ApiResponse<AdminUserResponse>` — unlocking also resets the failed-attempt counter | 200, 400, 401, 403, 404 | `VALIDATION_FAILED`, `ACCESS_DENIED`, `USER_NOT_FOUND` |
+| GET | `/api/admin/audit-logs` | JWT (Bearer), ADMIN | `?page&size&userId&action&from&to` | `ApiResponse<PagedResponse<AdminAuditLogResponse>>` | 200, 401, 403 | `ACCESS_DENIED` |
+| GET | `/swagger-ui/index.html`, `/v3/api-docs` | none (local/dev only — disabled in prod, ADR-025) | — | Interactive API docs (P5.8) | 200 | — |
 
 ## `GET /api/vault` query parameters (P4.5/M-34)
 
@@ -73,8 +101,9 @@ every other error code carries `errors: null` and puts the detail in `message` i
 `USER_NOT_FOUND` · `DUPLICATE_EMAIL` · `INVALID_CREDENTIALS` · `CREDENTIAL_NOT_FOUND` ·
 `VALIDATION_FAILED` · `ACCESS_DENIED` · `PASSWORD_REUSED` · `SHARE_ALREADY_EXISTS` ·
 `SELF_SHARE_NOT_ALLOWED` · `TOKEN_EXPIRED` · `TOKEN_INVALID` · `MFA_REQUIRED` · `MFA_INVALID` ·
-`INTERNAL_ERROR`. `PASSWORD_REUSED` is now live (P4.2); the rest reserved for sharing/refresh
-tokens/MFA (Phase 5).
+`INTERNAL_ERROR`. All live as of Phase 5 except `MFA_REQUIRED` — MFA-pending login is signalled
+via the 200 response's `mfaRequired` field, not an error, so that code stays reserved/unused
+(deliberate, not an oversight — see ADR-025).
 
 ---
-_Last updated: S4.6 — 2026-08-11._
+_Last updated: S5.8 — 2026-08-11._

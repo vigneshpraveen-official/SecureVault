@@ -36,6 +36,14 @@
          per P4.7's explicit instruction. -->
     <springProfile name="local">
         <logger name="com.securevault" level="DEBUG" />
+        <!-- P5.3: Spring's own cache abstraction (CacheAspectSupport) logs hit/miss at TRACE,
+             not DEBUG — "No cache entry for key ... ; invoking" on a miss, "Cache entry for key
+             ... found" on a hit. TRACE here (only for this one framework logger, local profile
+             only) is how S5.3's "log cache hit/miss at DEBUG so the behaviour is demonstrable"
+             requirement is actually satisfied, since com.securevault's own code never calls the
+             cache directly (P5.3's whole point is Spring's declarative @Cacheable/@CacheEvict,
+             not a hand-rolled cache client). -->
+        <logger name="org.springframework.cache" level="TRACE" />
         <root level="INFO">
             <appender-ref ref="CONSOLE" />
             <appender-ref ref="FILE" />

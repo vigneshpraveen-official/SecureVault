@@ -1,19 +1,19 @@
 # SecureVault — Progress Log
 
 ## CURRENT STATE
-- Phase: 4 — Data integrity, performance, operations (**complete**) — **Milestone 2 complete** (Phases 2-4)
-- Last session: S4.8 (Milestone 2 evidence pack)
-- Build: green | Tests: 13 passing (unchanged this phase — Phase 4 verification is entirely live curl/psql/log evidence, same pattern as every prior phase; JUnit+Testcontainers integration tests arrive in Phase 7, D-16) | Migrations applied: V0, V1, V2, V3 (`audit_logs`), V4 (`password_history`)
+- Phase: 5 — Sharing, sessions, platform hardening (**complete**) — Milestone 3 in progress (Phases 5-6; Phase 6 frontend still ahead)
+- Last session: S5.8 (OpenAPI documentation and admin module)
+- Build: green | Tests: 13 passing (unchanged — Phase 5 verification is entirely live curl/psql/Redis/MailHog/Swagger evidence, same pattern as every prior phase; JUnit+Testcontainers integration tests arrive in Phase 7, D-16) | Migrations applied: V0-V4 (Phases 1-4), V5 (`credential_shares`), V6 (`refresh_tokens`), V7 (`mfa_and_devices` + `refresh_tokens.device_fingerprint`), V8 (`login_attempts_and_alerts`), V9 (`notifications`)
 - Working branch: main (personal fork repo only; no central-repo remote configured yet — see ADR-006)
-- Next session: S5.1 — Credential sharing and permissions (M-42..M-45)
-- Open blockers: ERD PNG export is a manual dbdiagram.io step, not yet done by the developer (DBML source is committed). S9.1 (central-repo push) remains blocked pending mentor push/branch instructions (ADR-006) — P4.8's "prepare the central-repo push using P9.1" step is deferred until that instruction arrives, same as every prior phase.
-- Commit cadence: **one commit per phase**, not per session (ADR-008, developer's explicit preference from Phase 1 on) — Phase 4's eight sessions land in a single commit
-- Full phase/milestone tracker: `docs/roadmap.md` (24/53 sessions done, Milestone 1 complete, Phase 2 complete, Phase 3 complete, **Phase 4 complete, Milestone 2 complete**)
+- Next session: S6.1 — Frontend scaffold (Vite, Tailwind, router, axios interceptors, Redux store)
+- Open blockers: ERD PNG export is still a manual dbdiagram.io step (DBML source not yet regenerated for Phase 5's 7 new tables either). S9.1 (central-repo push) remains blocked pending mentor push/branch instructions (ADR-006). Swagger-disabled-in-prod (application-prod.yml) and Neon/Upstash-specific settings are declared but not live-verified — no prod infra exists yet (Phase 8).
+- Commit cadence: **one commit per phase**, not per session (ADR-008) — Phase 5's eight sessions land in a single commit
+- Full phase/milestone tracker: `docs/roadmap.md` (32/53 sessions done, Milestone 1 complete, Phase 2-4 complete, Milestone 2 complete, **Phase 5 complete**)
 
 ## NEXT UP
-1. S5.1 — Credential sharing and permissions (M-42..M-45)
-2. S5.2 — Refresh tokens, logout, Redis denylist
-3. S5.3 — Redis caching + invalidation
+1. S6.1 — Frontend scaffold (Vite, Tailwind, router, axios interceptors, Redux store)
+2. S6.2 — Auth screens + protected routes + MFA
+3. S6.3 — Vault UI (list, search, filter, pagination, CRUD, reveal/copy)
 
 ---
 ## SESSION LOG
@@ -421,3 +421,111 @@ visible at a glance across daily/ad-hoc sessions and across AI tools.
 **Verified:** `mvn clean verify` green at every step across the whole phase, run again at close. Full live journey re-confirmed end to end across all 8 sessions' evidence in `docs/evidence/milestone-2/`.
 **Blockers:** none. **Phase 4 is complete. Milestone 2 (Phases 2-4) is complete.**
 **Commit:** _batched — see Phase 4 close, ADR-008._
+
+### S5.1 — 2026-08-11 — Credential sharing and permissions
+**Mentor tasks:** M-42, M-43, M-44, M-45
+**Done:**
+- `credential_shares` table (V5) with a partial unique index `(credential_id, shared_with_user_id) WHERE active` — enforces no-duplicate-active-share without blocking re-sharing after a revoke.
+- `AccessEvaluator`/`AccessLevel` (`sharing/`) — the single authorisation decision point: owner → allow; else active unexpired share + permission → allow/deny; else 403. Takes primitive ids, not entities, to avoid a `sharing↔vault` circular dependency.
+- `CredentialServiceImpl.getByIdForUser`/`update` now route through `loadWithAccess`; delete/restore/permanent-delete/history stay strictly owner-only.
+- `POST /api/share`, `GET /api/share/received`, `GET /api/share/sent`, `PUT /api/share/{id}`, `DELETE /api/share/{id}` (soft revoke).
+- Shared reads are audited synchronously with the accessor's id (`AuditAction.ACCESS`, new enum value alongside `SHARE`/`REVOKE`).
+- `permanentDelete` now also deletes the credential's shares first (no `ON DELETE CASCADE`, same reasoning as `password_history`).
+**Files:** `sharing/*` (new package: entity, repo, service, controller, DTOs, events stub), `db/migration/V5__credential_shares.sql`, `common/exception/SelfShareNotAllowedException.java`, `common/exception/ShareAlreadyExistsException.java`, `common/exception/UserNotFoundException.java` (new email-based overload), `common/audit/AuditAction.java`, `vault/CredentialServiceImpl.java`
+**Decisions:** ADR-023 (AccessEvaluator design, share-403 collapse, cascade cleanup)
+**Verified:** Full master §12 matrix live — owner full access, READ view/denied-update, EDIT view/update/denied-delete, revoked/expired/unrelated all denied immediately; self-share 400; duplicate share 409; non-owner share attempt 403; soft-deleted credential unshareable and hidden from both lists; permanent delete cleans up shares (confirmed 0 rows remain) and its audit trail is untouched.
+**Blockers:** none
+**Commit:** _batched — see Phase 5 close, ADR-008._
+
+### S5.2 — 2026-08-11 — Refresh tokens, logout, Redis denylist
+**Mentor tasks:** (session, no numbered M-task — Phase 5 infrastructure)
+**Done:**
+- `refresh_tokens` table (V6) — SHA-256 hash only, never the raw token, plus a `token_family` UUID for reuse detection.
+- Access tokens gained a `jti` (JWT ID) claim; `JwtAuthenticationFilter` checks it against a Redis denylist (`jwt:denylist:<jti>`, TTL = remaining lifetime) before honoring an otherwise-valid token.
+- `POST /api/auth/refresh` (rotates, revoking the old token) and `POST /api/auth/logout` (revokes the refresh token + denylists the current access token).
+- Reuse detection: replaying an already-rotated token revokes the entire family in one statement.
+- **Fail-open** Redis denylist policy, explicit and documented (a Redis outage doesn't take the whole API down; a logged-out token can keep working for up to its remaining ≤15-min lifetime in that narrow window).
+**Files:** `security/RefreshToken.java`, `RefreshTokenRepository.java`, `RefreshTokenService.java`/`Impl`, `TokenHasher.java`, `TokenDenylistService.java`/`Impl`, `security/dto/{RefreshRequest,LogoutRequest,TokenRefreshResponse}.java`, `JwtService.java` (jti), `JwtAuthenticationFilter.java`, `AuthController.java`, `db/migration/V6__refresh_tokens.sql`
+**Decisions:** ADR-024 (rotation, reuse detection, fail-open denylist)
+**Verified:** access token expires after 15 min → 401; refresh returns a working new token and rotates; the old refresh token then 401s; replaying it triggers family-wide revocation (confirmed the newer sibling token also dies); logout immediately denylists the current access token (confirmed via Redis `TTL`, ~15 min remaining) and revokes the refresh token; Redis stopped mid-session → login and authenticated calls still worked (fail-open confirmed live), documented WARN lines present.
+**Blockers:** **Found and fixed live:** `@Transactional`'s default rollback-on-any-RuntimeException silently undid the family-wide revoke the instant `TokenInvalidException` was thrown — fixed with `noRollbackFor` (ADR-024).
+**Commit:** _batched — see Phase 5 close, ADR-008._
+
+### S5.3 — 2026-08-11 — Redis caching
+**Mentor tasks:** (session, no numbered M-task — Phase 5 infrastructure)
+**Done:**
+- `RedisCacheConfig` — three regions (`vaultList` 5 min, `passwordStrength` 10 min, `dashboard` 2 min), JSON serialization, `disableCachingNullValues`.
+- `CredentialServiceImpl.listForUser` cached, keyed on every filter param; `create`/`update`/`delete`/`restore` evict the whole `vaultList` region.
+- `PasswordStrengthServiceImpl.analyze` cached, keyed by **SHA-256 hash of the password**, never the password itself.
+- Consolidated three duplicate SHA-256-hex implementations into one shared `common/util/Sha256`.
+- Cache hit/miss made visible via TRACE on `org.springframework.cache` (local profile).
+**Files:** `config/RedisCacheConfig.java`, `common/util/Sha256.java`, `vault/CredentialServiceImpl.java`, `password/PasswordStrengthServiceImpl.java`, `security/TokenHasher.java` (refactored to reuse `Sha256`), `logback-spring.xml`
+**Decisions:** none new this session (caching mechanics folded into ADR-025 once the deeper bugs below were found in S5.6/S5.7)
+**Verified:** first list call MISS + populates cache (TRACE log), second call HIT with identical data; creating a credential evicts the cache, next call MISSes again and reflects the new item immediately; password-strength Redis value inspected directly — key is a hex hash, value contains only the analysis result, never the password.
+**Blockers:** **Found and fixed live:** `GenericJackson2JsonRedisSerializer` needs `ObjectMapper.DefaultTyping.EVERYTHING`, not `NON_FINAL` — Java records are implicitly final, so `NON_FINAL` omitted `@class` for record DTOs nested in generic fields (`PagedResponse<T>.content`), causing an `InvalidTypeIdException` on the second (cache-hit) read even though the first (cache-miss) write silently "succeeded." Full reasoning in ADR-025 once S5.6/S5.7 surfaced the related transaction-boundary and authorization-ordering bugs.
+**Commit:** _batched — see Phase 5 close, ADR-008._
+
+### S5.4 — 2026-08-11 — MFA (TOTP) + device and session tracking
+**Mentor tasks:** (session, no numbered M-task — Phase 5 infrastructure)
+**Done:**
+- TOTP via `dev.samstevens.totp` + zxing: `POST /api/auth/mfa/setup` (AES-encrypted secret, QR data URI, otpauth URI), `/verify` (enables MFA, issues 10 BCrypt-hashed backup codes shown once), `/disable` (requires a live code).
+- Login flow branches on `user.mfaEnabled`: correct password → `mfaRequired=true` + a 2-min Redis-backed challenge token, no tokens yet; `POST /api/auth/mfa/challenge` exchanges challenge + code (TOTP or a backup code) for the real tokens.
+- ±1 time-step clock-skew tolerance; Redis-backed replay guard (90s, covers the full skew window) rejects reusing an already-accepted code.
+- Device/session tracking: `devices` table, upserted on every login (SHA-256 of User-Agent+IP as a fingerprint approximation), `GET /api/monitoring/devices`, `DELETE .../devices/{id}` revokes every refresh token that device ever minted.
+**Files:** `security/{MfaBackupCode,MfaService,MfaServiceImpl,MfaChallengeService,MfaChallengeServiceImpl,BackupCodeGenerator}.java`, `security/dto/Mfa*.java`, `monitoring/{Device,DeviceRepository,DeviceService,DeviceServiceImpl,DeviceController}.java`, `user/User.java` (mapped `mfaEnabled`/`mfaSecret`), `security/{RefreshToken,RefreshTokenRepository,RefreshTokenService,RefreshTokenServiceImpl}.java` (device fingerprint threaded through), `AuthController.java`, `config/SecurityConfig.java` (mfa/setup-verify-disable now require auth, not blanket permitAll), `db/migration/V7__mfa_and_devices.sql`
+**Decisions:** ADR-026 (TOTP library, AES-encrypted secret, peek/invalidate challenge tokens, Redis replay guard)
+**Verified:** real QR/otpauth URI generated and a real TOTP code (computed independently via RFC 6238 in Python) accepted; wrong code rejected; enabling MFA issues 10 backup codes; full login-with-MFA round trip (password → challenge → code → real tokens); replaying the same code immediately rejected (replay guard); a backup code works once, then is rejected on reuse; device list and cross-user-protected revoke both verified, including that the revoked device's refresh token dies immediately.
+**Blockers:** **Found and fixed live:** `consumeChallenge()` deleted the Redis challenge token on every lookup, including failed attempts — one wrong digit permanently burned the token instead of allowing a retry inside the 2-minute window. Fixed by splitting into `peekChallenge()`/`invalidateChallenge()` (ADR-026).
+**Commit:** _batched — see Phase 5 close, ADR-008._
+
+### S5.5 — 2026-08-11 — Security monitoring and anomaly detection
+**Mentor tasks:** (session, no numbered M-task — Phase 5 infrastructure)
+**Done:**
+- `login_attempts` table, every attempt (success or failure) recorded; brute-force lockout after 5 failures in 15 min, auto-unlock after 30 min derived from `login_attempts`'s own timestamps (no new `locked_at` column).
+- Locked accounts return the exact same generic `InvalidCredentialsException` as a wrong password — never disclosed.
+- Four anomaly rules, each independently triggerable: new device/IP, elevated failed attempts (≥3, distinct from the ≥5 lockout), excessive vault access volume, mass permanent deletion — all via Redis `INCR`+`EXPIRE`+`SETNX`-guarded rate counters, each raising a persisted `SecurityAlert`.
+- `GET /api/monitoring/login-attempts` (own; `?all=true` for ADMIN), `GET /api/monitoring/alerts`, `GET /api/monitoring/risk-score` (documented additive formula, no ML).
+**Files:** `monitoring/{LoginAttempt,LoginAttemptRepository,LoginAttemptService,LoginAttemptServiceImpl,SecurityAlert,AlertType,AlertSeverity,SecurityAlertRepository,SecurityAlertService,SecurityAlertServiceImpl,SecurityAlertRaisedEvent,VaultAnomalyDetector,VaultAnomalyDetectorImpl,MonitoringController}.java`, `user/User.java` (mapped `accountLocked`/`failedLoginAttempts`), `security/{UserPrincipal,CustomUserDetailsService,AuthController}.java`, `vault/CredentialServiceImpl.java` (anomaly detector hooks), `db/migration/V8__login_attempts_and_alerts.sql`
+**Decisions:** ADR-027 (no `locked_at` column, Redis anomaly-rate-counter pattern)
+**Verified:** 5 wrong passwords → account locked, alerts raised at 3/4/5/6 failures (3-4 `ELEVATED`, 5+ `BRUTE_FORCE_LOCKOUT`); 6th attempt with the *correct* password still 401, identical response to a wrong password; 51 rapid reads on one credential → exactly one `EXCESSIVE_VAULT_ACCESS` alert (not 51); 5 permanent deletes in a short window → one `MASS_PERMANENT_DELETE` alert; second login from a different User-Agent → exactly one `NEW_DEVICE` alert (first-ever device correctly silent); risk-score formula verified against hand-computed expected values.
+**Blockers:** none
+**Commit:** _batched — see Phase 5 close, ADR-008._
+
+### S5.6 — 2026-08-11 — Notifications and async email
+**Mentor tasks:** (session, no numbered M-task — Phase 5 infrastructure)
+**Done:**
+- `notifications` table + `GET /api/notifications`, `PUT .../{id}/read`, `PUT .../read-all`.
+- `NotificationEventListener` — one component, four `@TransactionalEventListener(phase = AFTER_COMMIT)` handlers covering all five required triggers (new-device and security-alert both arrive as `SecurityAlertRaisedEvent`; credential-shared/share-revoked/password-expiry each get their own event).
+- Email via `JavaMailSender` against MailHog locally, dispatched `@Async("taskExecutor")`; failures logged at WARN, never break the business operation.
+- `PasswordExpiryScheduler` (`@Scheduled`, daily by default) sweeps for credentials >90 days old, Redis-guarded to at most one notification per user per 7 days.
+**Files:** `notification/*` (new package: entity, repo, service, controller, `EmailService`/`Impl`, `NotificationEventListener`, `PasswordExpiryCheckService`/`Impl`, `PasswordExpiryScheduler`, DTOs, events), `sharing/{CredentialSharedEvent,ShareRevokedEvent,CredentialShareServiceImpl}.java`, `vault/CredentialRepository.java` (stale-credential aggregate query), `SecureVaultApplication.java` (`@EnableScheduling`), `application.yml` (mail config), `db/migration/V9__notifications.sql`
+**Decisions:** ADR-025 (shared with S5.3/S5.7 — the AFTER_COMMIT/REQUIRES_NEW half), ADR-028 (event model, password-expiry sweep)
+**Verified:** all five triggers produce both a persisted `Notification` row and a real email visible in MailHog — credential-shared, share-revoked, new-device, security-alert (brute-force), password-expiry (via a temporary fast-cron override for live verification, then reverted); mark-read/mark-all-read confirmed; a wrong-code MFA disable attempt correctly does *not* fire a notification.
+**Blockers:** **Found and fixed live:** `NotificationServiceImpl.create()` (plain `@Transactional`) returned successfully with a `null` id and no row ever reached Postgres — `@TransactionalEventListener(AFTER_COMMIT)` runs while the just-committed transaction's resources can still be thread-bound, so the default `REQUIRED` propagation silently "participated" in a transaction that was already finished. Fixed with `Propagation.REQUIRES_NEW` (ADR-025).
+**Commit:** _batched — see Phase 5 close, ADR-008._
+
+### S5.7 — 2026-08-11 — Analytics dashboard APIs
+**Mentor tasks:** (session, no numbered M-task — Phase 5 infrastructure)
+**Done:**
+- `GET /api/dashboard/summary` (total, by-category, favorites, shared in/out, trash count, last login), `/password-health` (band counts, reused/stale, health score, top-5-to-fix), `/recent-activity` (last 20 audit entries, human-readable), `/alerts` (delegates to the S5.5 service).
+- `GET /api/admin/stats` (ADMIN only) — users, active sessions, failed logins 24h, alerts by severity, system health.
+- Every count is a database `GROUP BY`/aggregate query, never a full-table load followed by in-memory grouping (the one bounded exception: top-5-to-fix sorts a single user's own already-loaded active-credential list, same as `getHealth()`).
+- `summary`/`password-health`/admin-stats cached 2 min in the `dashboard` region.
+**Files:** `dashboard/*` (new package), `admin/{AdminController,AdminStatsService,AdminStatsServiceImpl,AdminStatsResponse}.java`, `vault/CredentialRepository.java` (grouped-count queries), `security/RefreshTokenRepository.java`/`monitoring/{LoginAttemptRepository,SecurityAlertRepository}.java` (admin-stats queries), `common/audit/AuditLogRepository.java` (top-20 query)
+**Decisions:** ADR-029 (aggregate-in-database rule, 2-min cache, no active eviction)
+**Verified:** all four dashboard endpoints against a real multi-category, multi-strength vault — correct category breakdown, correctly-ranked top-5-to-fix, human-readable activity descriptions, empty alerts for a clean account; non-admin → 403 on `/api/admin/stats`, admin (promoted via DB) → 200 with correct aggregate numbers.
+**Blockers:** **Found and fixed live:** caching `AdminController.stats()` as a single method meant a warm cache entry (from an earlier admin call) served a genuinely different **non-admin** user 200 with real stats — the `@Cacheable` proxy never re-ran the method body, so the role check inside it never re-ran either. Fixed by splitting the ADMIN check (uncached, controller) from the computation (cached, a separate `AdminStatsServiceImpl` bean) — re-verified live that a fresh non-admin still gets 403 even with a warm cache (ADR-025).
+**Commit:** _batched — see Phase 5 close, ADR-008._
+
+### S5.8 — 2026-08-11 — OpenAPI documentation and admin module
+**Mentor tasks:** (session, no numbered M-task — Phase 5 infrastructure)
+**Done:**
+- `springdoc-openapi-starter-webmvc-ui` — `bearerAuth` HTTP/bearer security scheme, `@Tag` on every controller grouping Swagger UI by feature module (8 tags), title/version/description.
+- `GET /api/admin/users` (paginated, `Specification`-based email/name search), `PUT /api/admin/users/{id}/status` (lock/activate, resets the failure counter on unlock), `GET /api/admin/audit-logs` (filterable by user/action/date range via `Specification`).
+- `@EnableMethodSecurity` + `@PreAuthorize("hasRole('ADMIN')")` on all four `AdminController` routes, replacing the manual role check S5.7 used before method security existed.
+- Swagger UI/API docs disabled under the `prod` profile.
+**Files:** `config/OpenApiConfig.java`, `admin/{AdminController,AdminUserService,AdminUserServiceImpl,AdminAuditLogService,AdminAuditLogServiceImpl}.java`, `admin/dto/{AdminUserResponse,AdminUserStatusUpdateRequest,AdminAuditLogResponse}.java`, `user/{UserRepository,UserSpecifications}.java`, `common/audit/{AuditLogRepository,AuditLogSpecifications}.java`, `config/SecurityConfig.java` (`@EnableMethodSecurity`), every `@RestController` (`@Tag` added), `application-prod.yml`
+**Decisions:** ADR-030 (method security, manual-check retirement, Specification-based filtering)
+**Verified:** `GET /v3/api-docs` is valid OpenAPI 3.1 JSON, 39 paths, 8 tags, `bearerAuth` scheme present; Swagger UI loads (200); a genuinely separate non-admin user gets 403 on all four `/api/admin/**` routes, an admin gets 200 with correct paginated/filtered data on all four, including lock/unlock actually taking effect on subsequent login attempts.
+**Blockers:** none (the one real bug this session touched — cache bypassing the admin check — was S5.7's `/stats` endpoint, fixed there and confirmed still holding once `@PreAuthorize` replaced the manual check)
+**Commit:** _batched — see Phase 5 close, ADR-008._

@@ -9,7 +9,7 @@ session log; this file is the static map both `progress.md` and every AI agent p
 forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching entry in
 `docs/progress.md`'s SESSION LOG.
 
-**Progress: 24 / 53 sessions complete. Milestone 1 complete. Phase 2 complete. Phase 3 complete. Phase 4 complete. Milestone 2 complete.**
+**Progress: 32 / 53 sessions complete. Milestone 1 complete. Phase 2 complete. Phase 3 complete. Phase 4 complete. Milestone 2 complete. Phase 5 complete.**
 
 ---
 
@@ -68,14 +68,14 @@ forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching 
 ## Milestone 3 (Weeks 5–6) — Phases 5–6
 
 ### Phase 5 — Sharing, sessions, platform hardening
-- [ ] **S5.1** — Credential sharing + permission model (M-42..M-45)
-- [ ] **S5.2** — Refresh tokens, logout, Redis denylist
-- [ ] **S5.3** — Redis caching + invalidation
-- [ ] **S5.4** — MFA (TOTP) + device/session tracking
-- [ ] **S5.5** — Security monitoring & anomaly detection
-- [ ] **S5.6** — Notifications + async email
-- [ ] **S5.7** — Analytics dashboard APIs
-- [ ] **S5.8** — OpenAPI/Swagger + admin endpoints
+- [x] **S5.1** — Credential sharing + permission model (M-42..M-45) — *2026-08-11*
+- [x] **S5.2** — Refresh tokens, logout, Redis denylist — *2026-08-11*
+- [x] **S5.3** — Redis caching + invalidation — *2026-08-11*
+- [x] **S5.4** — MFA (TOTP) + device/session tracking — *2026-08-11*
+- [x] **S5.5** — Security monitoring & anomaly detection — *2026-08-11*
+- [x] **S5.6** — Notifications + async email — *2026-08-11*
+- [x] **S5.7** — Analytics dashboard APIs — *2026-08-11*
+- [x] **S5.8** — OpenAPI/Swagger + admin endpoints — *2026-08-11*
 
 ### Phase 6 — React frontend
 *(master §16 maps Phase 6 to both M3 and M4 — frontend work is expected to span the boundary.)*
@@ -113,4 +113,4 @@ forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching 
 - [ ] **S9.2** — Demo rehearsal + evidence pack: full user journey in under 8 minutes, fallback screenshots for cold-start delays
 
 ---
-_Total: 53 sessions across 10 phases. Last updated: S4.8 — 2026-08-11._
+_Total: 53 sessions across 10 phases. Last updated: S5.8 — 2026-08-11._

@@ -111,13 +111,15 @@ React 18 + Vite (frontend/ — not built yet, Phase 6)
   │  HTTPS /api/**
   ▼
 Spring Boot 3.5 (backend/) — monolith, feature-first packages
-  ├── config/      Security, Async, Redis, OpenAPI, CORS
+  ├── config/      Security (+ method security), Async, RedisCache, OpenAPI, CORS
   ├── common/      response envelope, exceptions, audit, util
-  ├── security/    JWT service/filter, AES-GCM crypto
-  ├── user/ vault/ password/ sharing/ notification/ monitoring/ report/ admin/
+  ├── security/    JWT service/filter, refresh tokens, MFA, AES-GCM crypto
+  ├── user/ vault/ password/ sharing/ notification/ monitoring/ dashboard/ admin/ report/
   ▼
 PostgreSQL 16 (Docker locally / Neon in prod) — Flyway-migrated, ddl-auto=validate
-Redis 7 (Docker locally / Upstash in prod) — JWT denylist + vault-list cache (from Phase 5)
+Redis 7 (Docker locally / Upstash in prod) — JWT denylist, vault-list/strength/dashboard cache,
+                                              MFA challenge/replay guard, anomaly rate counters
+MailHog (Docker locally / real SMTP in prod) — async email (Phase 5)
 ```
 
 Full reasoned layer diagram is in `docs/architecture.md` (S0.2). Below is the request flow
@@ -180,8 +182,14 @@ instead, which write the identical envelope shape by hand.
 | `security/` | `JwtService`, `JwtAuthenticationFilter`, `UserPrincipal`, `CustomUserDetailsService`, `AuthController` (login), `security/crypto/AesEncryptionService`, `security/dto/` | live |
 | `user/` | `User` entity, `Role`, `UserRepository`, `UserService`/`Impl`, `UserController` (register), `UserMapper`, `user/dto/` | live |
 | `vault/` | `Credential` entity (+ `strengthScore`/`passwordChangedAt`, S3.3; `deleted`/`deletedAt` wired up S4.3), `PasswordHistory` entity (S4.2), `Category`, `CredentialRepository` (+ `JpaSpecificationExecutor`, S4.5), `CredentialSpecifications` (S4.5), `PasswordHistoryRepository`, `CredentialService`/`Impl` (create/read/update/soft-delete/restore/trash/permanent-delete/health/history/bulk-recompute), `CredentialController`, `CredentialMapper`, `vault/dto/` | live |
-| `password/` | `PasswordStrengthService`/`Impl`, `PasswordGeneratorService`/`Impl`, `PasswordController` (`/strength`, `/generate`), `password/dto/` (incl. the custom `@AtLeastOneCharacterClass` constraint) — no `Entity`/`Repository`, it's a stateless utility feature, not a persisted one | live |
-| `sharing/`, `notification/`, `monitoring/`, `report/`, `admin/` | reserved (package-info only) | empty, Phase 5+ |
+| `password/` | `PasswordStrengthService`/`Impl` (`analyze` cached, S5.3), `PasswordGeneratorService`/`Impl`, `PasswordController` (`/strength`, `/generate`), `password/dto/` (incl. the custom `@AtLeastOneCharacterClass` constraint) — no `Entity`/`Repository`, it's a stateless utility feature, not a persisted one | live |
+| `sharing/` | `CredentialShare` entity, `SharePermission`, `AccessLevel`/`AccessEvaluator`/`Impl` (single authorisation decision point, S5.1/ADR-023), `CredentialShareRepository`, `CredentialShareService`/`Impl`, `CredentialShareController`, `CredentialSharedEvent`/`ShareRevokedEvent` (S5.6), `sharing/dto/` | live (S5.1) |
+| `security/` (Phase 5 additions) | `RefreshToken` entity + `RefreshTokenRepository`/`Service`/`Impl` (rotation + reuse detection, S5.2/ADR-024), `TokenHasher`, `TokenDenylistService`/`Impl` (Redis, fail-open), `MfaBackupCode` + repo, `MfaService`/`Impl`, `MfaChallengeService`/`Impl` (peek/invalidate, S5.4/ADR-026), `BackupCodeGenerator`, `security/dto/` (MFA + token DTOs) | live (S5.2, S5.4) |
+| `monitoring/` | `Device` entity + `DeviceService`/`Impl`/`Controller` (S5.4), `LoginAttempt` + `Service`/`Impl` (brute-force lockout, S5.5/ADR-027), `SecurityAlert`/`AlertType`/`AlertSeverity` + `Service`/`Impl`, `SecurityAlertRaisedEvent`, `VaultAnomalyDetector`/`Impl` (Redis rate counters), `MonitoringController` (login-attempts/alerts/risk-score) | live (S5.4, S5.5) |
+| `notification/` | `Notification`/`NotificationType` + `Repository`/`Service`/`Impl`/`Controller`, `EmailService`/`Impl` (`@Async`, MailHog locally), `NotificationEventListener` (`@TransactionalEventListener(AFTER_COMMIT)`, S5.6/ADR-025/ADR-028), `PasswordExpiryCheckService`/`Impl` + `PasswordExpiryScheduler` (`@Scheduled`), `PasswordExpiryWarningEvent` | live (S5.6) |
+| `dashboard/` | `DashboardService`/`Impl`/`Controller` — summary/password-health/recent-activity/alerts, database-aggregated, 2-min cache on the first two (S5.7/ADR-029) | live (S5.7) |
+| `admin/` | `AdminController` (`@PreAuthorize("hasRole('ADMIN')")`), `AdminStatsService`/`Impl` (cached separately from the auth check, ADR-025), `AdminUserService`/`Impl`, `AdminAuditLogService`/`Impl`, `admin/dto/` (S5.7 stats, S5.8 users/status/audit-logs/ADR-030) | live (S5.7, S5.8) |
+| `report/` | reserved (package-info only) | empty, Phase 8+ |
 
 Every feature package with real code follows the same shape: `Entity`, `Repository`
 (Spring Data interface), `Service`/`ServiceImpl`, `Controller`, `Mapper` (MapStruct), and a
@@ -222,20 +230,43 @@ on every line, console and file both. Console + `RollingFileAppender`
 `<springProfile>` blocks. `logs/` is gitignored. Full "never logged" list: `docs/decisions.md`
 ADR-022.
 
+## Caching (P5.3/S5.3)
+
+Spring Cache backed by Redis (`config/RedisCacheConfig`), three named regions, each with its own
+TTL and key prefix (`sv:cache:<region>::`), JSON serialization via a **dedicated** `ObjectMapper`
+with `DefaultTyping.EVERYTHING` (not the shared REST mapper, and not `NON_FINAL` — see ADR-025 for
+why generics + Java records specifically need `EVERYTHING`):
+
+| Region | TTL | What | Eviction |
+|---|---|---|---|
+| `vaultList` | 5 min | `GET /api/vault` results, keyed by every filter param | Immediate — every vault create/update/delete/restore does `@CacheEvict(allEntries = true)`; correctness matters more here than per-user precision |
+| `passwordStrength` | 10 min | `PasswordStrengthServiceImpl#analyze`, keyed by **SHA-256 hash of the password**, never the password itself | None needed — pure deterministic function of the input |
+| `dashboard` | 2 min | Dashboard summary/password-health, admin stats | None — time-based only; documented, accepted staleness (ADR-029) |
+
+Never cached: decrypted credentials, tokens, MFA secrets, or anything an authorization check
+gates in the same method (ADR-025 — a cached method's body doesn't re-run on a cache hit, so an
+auth check inside it would be bypassed). Cache hit/miss is visible at TRACE on
+`org.springframework.cache` (local profile only, `logback-spring.xml`) since Spring's own cache
+aspect logs there, not at a level this codebase controls directly.
+
 ## Database schema
 
 Full target schema, column-by-column, index rationale, and relationship diagram: `docs/db-design.md`.
-ERD source: `docs/erd/securevault.dbml` (paste into dbdiagram.io to render/export).
-`users`, `credentials`, `audit_logs` (V3, S4.1), and `password_history` (V4, S4.2) exist as of
-Phase 4 — everything else is documented ahead of time and migrated in the phase that needs it.
+ERD source: `docs/erd/securevault.dbml` (paste into dbdiagram.io to render/export — not yet
+regenerated for Phase 5's new tables, a standing developer action item since S0.3).
+`users`, `credentials`, `audit_logs` (V3), `password_history` (V4), `credential_shares` (V5),
+`refresh_tokens` (V6, +`device_fingerprint` V7), `mfa_backup_codes`/`devices` (V7),
+`login_attempts`/`security_alerts` (V8), `notifications` (V9) — all live as of Phase 5.
 
 ## API index
 
 Full live index (every real endpoint, request/response DTOs, status/error codes) is
-`docs/api-contract.md`, regenerated from the actual controllers each phase. As of Phase 4:
-register, login, password strength/generation, and full vault CRUD + paginated
-list/search/filter/health/trash/restore/permanent-delete/history/bulk-recompute —
-16 endpoints plus `/actuator/health`.
+`docs/api-contract.md`, regenerated from the actual controllers each phase. As of Phase 5: auth
+(register/login/refresh/logout/MFA setup-verify-disable-challenge), full vault CRUD, password
+strength/generation, sharing (create/received/sent/update/revoke), monitoring
+(devices/login-attempts/alerts/risk-score), notifications, dashboard (summary/password-health/
+recent-activity/alerts), admin (stats/users/status/audit-logs), plus Swagger UI — 39 endpoints
+total (per the live OpenAPI doc, `GET /v3/api-docs`), disabled in the `prod` profile.
 
 ## Testing
 
@@ -259,4 +290,4 @@ Neon (PostgreSQL), Upstash (Redis) — see master §18.
   stop it before retrying.
 
 ---
-_Last updated: S4.8 — 2026-08-11._
+_Last updated: S5.8 — 2026-08-11._

@@ -1,5 +1,6 @@
 package com.securevault.vault;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -41,4 +42,23 @@ public interface CredentialRepository
                     + "OR LOWER(c.username) LIKE LOWER(CONCAT('%', :term, '%')) "
                     + "OR LOWER(c.websiteUrl) LIKE LOWER(CONCAT('%', :term, '%')))")
     List<Credential> search(@Param("userId") Long userId, @Param("term") String term);
+
+    // P5.6: one grouped aggregate query across every user, not one row-fetch per user — same
+    // "aggregate with the database, not in memory" principle as P4.4/S5.7.
+    @Query(
+            "SELECT c.user.id, COUNT(c) FROM Credential c "
+                    + "WHERE c.deleted = false AND c.passwordChangedAt < :threshold "
+                    + "GROUP BY c.user.id")
+    List<Object[]> countStaleCredentialsByUser(@Param("threshold") Instant threshold);
+
+    long countByUserIdAndDeletedFalse(Long userId);
+
+    long countByUserIdAndDeletedFalseAndFavoriteTrue(Long userId);
+
+    // P5.7 step "Aggregate with database queries and projections, not by loading entities into
+    // memory" — one grouped COUNT, not a full-table load followed by an in-memory groupingBy.
+    @Query(
+            "SELECT c.category, COUNT(c) FROM Credential c "
+                    + "WHERE c.user.id = :userId AND c.deleted = false GROUP BY c.category")
+    List<Object[]> countByCategoryForUser(@Param("userId") Long userId);
 }
