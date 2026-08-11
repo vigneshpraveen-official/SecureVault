@@ -776,3 +776,162 @@ within the same controller for no reason once method security exists).
 **Consequences:** Any new admin-only, whole-endpoint route should use `@PreAuthorize`, not a
 manual role check — the manual pattern is now reserved specifically for "one endpoint, multiple
 authorization-scoped branches" cases like `MonitoringController`'s.
+
+---
+
+### ADR-031 — Frontend stack pins: React 18 over Vite's React 19 default, Tailwind v4 CSS-first config
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** D-14 locks "React 18 + Vite + JavaScript." `npm create vite@latest` (current version)
+scaffolds React 19 and pulls in `@types/react`/`@types/react-dom` 19 as transitive peers even for
+the plain-JS template. Tailwind's current major (v4) also changes setup shape from what most
+existing tutorials/D-14-era expectations assume: no `tailwind.config.js`/`content` globs by
+default, no `@tailwind base/components/utilities` directives — configuration is CSS-first via
+`@import "tailwindcss"` plus an `@theme` block, and Vite integration is a dedicated
+`@tailwindcss/vite` plugin rather than a PostCSS config file.
+**Decision:** Pinned `react`/`react-dom` to `^18.3.1` immediately after scaffolding (verified via
+`npm ls` that every dependency — Redux Toolkit, React Router, react-hot-toast, lucide-react —
+deduped onto the same 18.3.1, no dual-version tree) and removed the stray `@types/*` packages
+(unused in a JS project). Kept Tailwind at its current major (v4) rather than downgrading to v3
+for tutorial-familiarity — v4's CSS-first `@theme` block is actually a better fit for "a small
+design token set: one accent colour, a neutral scale, consistent radius and spacing" (P6.1) than
+hand-writing a `tailwind.config.js` theme object, and downgrading a fresh scaffold to an older
+major for no functional reason isn't a good trade. Design tokens live in `src/index.css`'s
+`@theme` block (`--color-accent-*`, `--color-neutral-*`, `--radius-sv`).
+**Alternatives:** Downgrading Tailwind to v3 to match older tutorial conventions (rejected — no
+functional benefit, and v4's CSS-first config is a genuine improvement for this exact use case);
+leaving React at v19 and treating D-14 as stale (rejected without asking first — D-14 is an
+explicit locked decision naming React 18, and the PDF's evaluation criteria follow the spec).
+**Consequences:** Any future `npm install`/`npm update` must not float `react`/`react-dom` past
+18.x without a fresh ADR. Tailwind class names and the `@theme` token setup will look unfamiliar
+to anyone expecting a v3-era `tailwind.config.js` — noted here so that's not mistaken for a
+missing file.
+
+---
+
+### ADR-032 — Redux Toolkit thunks (not RTK Query) for data fetching; one axios client owns all HTTP
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P6.1 requires "RTK Query or thunks for vault data — pick one, use it everywhere,
+record the ADR." The same session also requires a hand-built axios instance with a specific
+interceptor contract: attach the bearer token, detect a 401 from an authenticated request, queue
+concurrent 401s behind a single in-flight `/api/auth/refresh` call, retry them with the rotated
+token, and clear auth + redirect on refresh failure — all while never retrying the refresh
+endpoint itself (loop guard).
+**Decision:** `createAsyncThunk` (Redux Toolkit thunks) throughout — `authSlice`
+(register/login/MFA challenge/logout) and `vaultSlice` (list/create/update/delete/restore, each
+mutation re-dispatching `fetchVaultList` with the current query rather than hand-patching local
+state, mirroring the backend's own "evict the whole cache region, don't try to patch it" approach
+from P5.3). Every thunk calls `apiRequest()` (`src/api/client.js`), which wraps the one axios
+instance and unwraps `ApiResponse.data` centrally. Sharing, dashboard, and admin features call the
+same `api/*.js` modules directly from component state (`useState`/`useEffect`) rather than through
+Redux, since nothing about their data needs to be shared across routes or survive a navigation —
+promoting everything to Redux "for consistency" would just be unused global state.
+**Alternatives:** RTK Query (rejected — its `fetchBaseQuery`/`baseQuery` model wants to own the
+HTTP layer itself; bolting the required refresh-queue-and-retry interceptor logic underneath it
+would mean either fighting RTK Query's own retry/cache-invalidation model or duplicating the
+interceptor a second time outside it — plain axios interceptors are the natural home for exactly
+the queueing behavior P6.1 specifies, and thunks compose with that client for free). Redux for
+every feature, not just auth/vault (rejected as over-centralization — see decision above).
+**Consequences:** Any new feature module needing to *share* server state across multiple routes
+(not just fetch-and-render once) should get its own slice + thunks following the `vaultSlice`
+pattern; anything route-local should stay component state calling `api/*.js` directly.
+
+---
+
+### ADR-033 — Dashboard charts: plain markup bars over a charting library; SVG only for the score dial
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P6.6 asks for "a simple category distribution chart and a strength distribution
+chart (use a light chart library or plain SVG — record the choice in an ADR)."
+**Decision:** Both distribution charts (`CategoryChart`, `StrengthChart`) render as horizontal
+bar lists — a labeled row per category/strength-band, a proportionally-widthed `div` bar, a count
+— using plain Tailwind-styled `<div>`s, not SVG and not a charting library. The one place that
+genuinely benefits from SVG is the circular health-score dial (`ScoreDial`, shared by the vault
+page's health widget and the dashboard's password-health card), which needs a true arc and has
+exactly one data point, not a multi-category comparison. No charting library (`recharts`,
+`chart.js`, etc.) was added.
+**Alternatives:** A charting library (rejected — zero new dependencies was already the norm for
+this frontend per P6.1's "nothing else without an ADR" dependency policy, and 5-7 category rows
+don't need a general-purpose charting engine); hand-rolled SVG donut/pie arcs for the category
+chart (rejected — arc math via `stroke-dasharray`/path trigonometry is easy to get subtly wrong,
+and a sorted horizontal bar list is at least as readable for 5-7 categories while being far less
+code to get right).
+**Consequences:** If a future session needs a genuinely multi-dimensional chart (time series,
+scatter, etc.), that's the point to actually add a charting library — the bar-list approach here
+doesn't generalize past "distribution across a handful of named categories."
+
+---
+
+### ADR-034 — Frontend gaps discovered against a backend surface that doesn't (yet) support them
+**Date:** 2026-08-11 · **Status:** accepted, tracked
+**Context:** Several UI capabilities named across the P6.x prompts assume a backend write path or
+field that master §11's "complete target surface" lists but that no Phase 1-5 session actually
+implemented. Building the UI first and discovering the gap live (rather than assuming the backend
+supports something because a prompt asked for it) is consistent with this project's
+verify-against-the-running-app methodology.
+**Decision:** Each gap was handled by omitting the non-functional affordance rather than faking
+it against data the backend can't actually persist or act on:
+1. **Forgot/reset password** (P6.2) — `POST /api/auth/forgot-password`/`reset-password` appear in
+   master §11's target surface but were never assigned a mentor task or a session in the 53-session
+   backlog (§5/§16). No screens built; no dead links to a nonexistent endpoint.
+2. **Favorite toggle** (P6.3) — `CredentialCreateRequest`/`CredentialUpdateRequest` have no
+   `favorite` field, and `CredentialMapper` explicitly carries `@Mapping(target = "favorite",
+   ignore = true)` on both create and update — a deliberate prior exclusion, not an oversight, so
+   this session did not reverse it unilaterally. The vault list shows the (currently always-false)
+   favorite star as a **read-only** indicator, not a fake-working toggle that would return 200
+   while silently changing nothing.
+3. **Trash "deletion date"** (P6.5) — `CredentialSummaryResponse` (reused for the trash list) has
+   no `deletedAt` field, only `updatedAt`. Since a soft delete sets both in the same write, the
+   trash view labels the `updatedAt` column "Deleted" — accurate for a trashed row, not fabricated.
+4. **Alert dismiss action** (P6.6) — `SecurityAlertResponse` carries an internal `resolved` flag
+   that no endpoint ever sets from the outside. The dashboard/admin alert panels are read-only.
+5. **Admin-wide "active devices"** (P6.7) — `GET /api/monitoring/devices` only ever returns the
+   caller's own devices; unlike login-attempts/alerts, it never grew a `?all=true` admin scope.
+   The admin security-monitoring tab covers login attempts and alerts (both admin-scoped) and
+   omits a platform-wide device list rather than showing one user's devices mislabeled as global.
+6. **Admin users table "last login"** (P6.7) — `AdminUserResponse` has no such field; the column
+   was omitted rather than showing a placeholder.
+**Alternatives considered and rejected for every item above:** adding the missing backend field/
+endpoint during this frontend-only phase (rejected — scope creep into backend behavior without
+the "write an ADR and ask first" step CLAUDE.md requires for anything touching a locked layer,
+and several of these — favorite in particular — look like deliberate prior exclusions, not bugs);
+faking the UI against data the backend can't support (rejected outright — a button that returns
+200 while changing nothing is worse than no button, and this project's explicit rule is "no
+client-side aggregation or fabrication — the server's answer is the one that counts").
+**Consequences:** If a future phase needs any of these six capabilities for real, each needs its
+own backend session (new DTO fields / endpoints / migration where relevant) before the frontend
+affordance can honestly become interactive. Listed here as a single tracked backlog rather than
+six one-line TODOs scattered across component comments.
+
+---
+
+### ADR-035 — Admin-imposed account lock is silently undone by the existing auto-unlock heuristic (found live, not fixed)
+**Date:** 2026-08-11 · **Status:** accepted, tracked (backend bug, out of scope for Phase 6)
+**Context:** While live-verifying S6.7's admin lock/unlock UI against the real backend: locking a
+user via `PUT /api/admin/users/{id}/status {"locked":true}` sets `account_locked=true` correctly
+(confirmed via direct `psql`), but the **very next login attempt by that user succeeds**, and
+`account_locked` flips back to `false` — even though no unlock call was ever made.
+**Root cause:** `CustomUserDetailsService` (P5.5) auto-clears `accountLocked` on login whenever the
+user's most recent *failed* login attempt is more than 30 minutes old, treating "no recent
+failure" as "safe to auto-unlock." That heuristic was written for the brute-force-lockout case
+(5 failures -> auto-unlock after 30 min), which is exactly right there. But it can't distinguish
+"this user was auto-locked by the brute-force detector" from "an admin just locked this account
+on purpose" — both are the same `account_locked` column. A user with a clean failure history
+(`failed_login_attempts = 0`) has, by definition, no failure recent or otherwise, so the very
+first login attempt after an admin lock passes the "most recent failure is stale/absent" check
+and silently clears the lock.
+**Verified live:** locked `seed.user` via the admin API -> confirmed `account_locked = t` via
+direct SQL with zero login attempts in between -> seed user's next `/api/auth/login` call
+returned 200 with real tokens -> SQL immediately after showed `account_locked = f`.
+**Decision:** Not fixed in this phase. This is backend authorization logic (`CustomUserDetailsService`,
+P5.5), and Phase 6 is scoped to frontend work — the project's own rule is to flag a conflict and
+ask before touching a different phase's already-shipped, working-as-far-as-P5.5-tested logic,
+rather than silently patch it mid-frontend-phase. The frontend itself behaves correctly: it calls
+the real endpoint and displays whatever state the backend returns, so there's no frontend bug to
+fix — the lock genuinely does apply and genuinely does get undone by the backend's own logic.
+**Alternatives (for the eventual fix, not applied here):** a separate `admin_locked` boolean
+distinct from the brute-force `account_locked`/`failed_login_attempts` pair; or having the
+auto-unlock check require *some* failure history to exist before auto-clearing, rather than
+treating "no failures on record" as automatically eligible.
+**Consequences:** Until fixed, the admin "lock user" feature is reliable only for accounts that
+already have failed login attempts on record (i.e., it durably reinforces an existing brute-force
+lock) — locking an otherwise-clean account is cosmetic and self-reverses on that user's next
+successful login. Flagged to the developer directly, not just buried in this file.

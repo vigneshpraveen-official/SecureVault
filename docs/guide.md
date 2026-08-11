@@ -84,6 +84,21 @@ docker compose down          # add -v to also drop the data volumes
 
 MailHog web UI (catches all local dev email): http://localhost:8025
 
+Run the frontend (Phase 6, `frontend/`):
+```bash
+cd frontend
+npm install                  # first time only
+cp .env.example .env.local   # VITE_API_BASE_URL — defaults to http://localhost:8080
+npm run dev                  # Vite dev server on http://localhost:5173
+```
+Production build (also the check for source-map leakage and console-log residue, S6.8):
+```bash
+npm run build                # dist/ — no source maps (vite.config.js build.sourcemap=false)
+npm run lint                 # oxlint
+```
+Backend CORS already defaults `APP_CORS_ORIGINS` to `http://localhost:5173`, so no extra
+configuration is needed to run both together locally.
+
 ## Environment variables
 
 See `.env.example` for the authoritative, commented list. Summary:
@@ -101,13 +116,22 @@ See `.env.example` for the authoritative, commented list. Summary:
 `JWT_SECRET` and `AES_SECRET_KEY` have **no default** in `application.yml` — the app fails
 fast at startup if either is missing, by design.
 
+Frontend (`frontend/.env.example`):
+
+| Variable | Purpose |
+|---|---|
+| `VITE_API_BASE_URL` | Base URL the axios client (`src/api/client.js`) targets — never hardcoded in source |
+
 ## Architecture overview
 
 ```
 Browser
   │
   ▼
-React 18 + Vite (frontend/ — not built yet, Phase 6)
+React 18 + Vite (frontend/ — live, Phase 6) — Redux Toolkit (auth/vault slices, thunks),
+  React Router (ProtectedRoute/AdminRoute), one axios instance with a request-token
+  interceptor + a response interceptor that queues concurrent 401s behind a single
+  /api/auth/refresh call, retries them, and redirects to /login on refresh failure
   │  HTTPS /api/**
   ▼
 Spring Boot 3.5 (backend/) — monolith, feature-first packages
@@ -194,6 +218,27 @@ instead, which write the identical envelope shape by hand.
 Every feature package with real code follows the same shape: `Entity`, `Repository`
 (Spring Data interface), `Service`/`ServiceImpl`, `Controller`, `Mapper` (MapStruct), and a
 `dto/` sub-package for request/response records — see `docs/ai/CONVENTIONS.md`.
+
+## Frontend module map (Phase 6, `frontend/src/`)
+
+| Directory | Contains | Status |
+|---|---|---|
+| `api/` | `client.js` (the one axios instance — request interceptor attaches the bearer token, response interceptor queues concurrent 401s behind a single `/api/auth/refresh` call and retries them, `apiRequest()` unwraps `ApiResponse.data`), `tokenStore.js` (localStorage), one module per backend feature (`auth.js`, `vault.js`, `password.js`, `sharing.js`, `monitoring.js`, `notifications.js`, `dashboard.js`, `admin.js`) | live |
+| `app/` | `store.js` (Redux Toolkit, wires `client.js`'s `onAuthExpired` callback to the `sessionExpired` action), `router.jsx` (route-level code splitting via `React.lazy`, `ProtectedRoute`/`AdminRoute` guards) | live |
+| `features/auth/` | `authSlice.js` (register/login/MFA-challenge/logout thunks), `registerValidation.js`, `SessionExpiryWarning.jsx` (polls the access token's `exp` claim, S6.8) | live |
+| `features/vault/` | `vaultSlice.js` (list/create/update/delete/restore thunks — every mutation re-dispatches the list rather than patching local state, mirroring the backend's own cache-eviction approach), `VaultRow.jsx` (`React.memo`, S6.8), `CredentialFormModal.jsx`, `VaultFilters.jsx`, `useRevealPassword.js` (20s auto-hide, best-effort 30s clipboard clear), `HistoryDrawer.jsx`, `FaviconIcon.jsx`, `categories.js` | live |
+| `features/password/` | `GeneratorPanel.jsx`, `PasswordHealthWidget.jsx` (`GET /api/vault/health`) | live |
+| `features/sharing/` | `ShareDialog.jsx`, `expiry.js` | live |
+| `features/dashboard/` | `SummaryCards.jsx`, `PasswordHealthCard.jsx` (`GET /api/dashboard/password-health` — has `topItemsToFix`, unlike the vault-health endpoint above), `RecentActivity.jsx`, `SecurityAlerts.jsx` (read-only, ADR-034), `CategoryChart.jsx`/`StrengthChart.jsx` (plain markup bars, ADR-033) | live |
+| `features/admin/` | `AdminOverview.jsx`, `AdminUsersTable.jsx`, `AdminAuditLogViewer.jsx`, `AdminSecurityMonitoring.jsx` (login-attempts + alerts only — no admin-wide devices endpoint exists, ADR-034) | live |
+| `components/` | Base set: `Button`, `Input`, `Card`, `Modal` (focus trap + nested-modal-aware Escape via `modalStack.js`), `Table`, `Badge`, `Spinner`, `Skeleton`, `EmptyState`, `Pagination`, `ConfirmDialog`, `IconButton`, `ScoreDial`, `Tabs`, `ErrorBoundary`, `ProtectedRoute`, `AdminRoute`, `AppLayout` (bottom tab bar below `sm:`, S6.8) | live |
+| `pages/` | `LoginPage`, `RegisterPage`, `DashboardPage`, `VaultPage`, `TrashPage`, `SharingPage`, `AdminPage`, `NotFoundPage` | live |
+| `hooks/`, `utils/` | `useDebouncedValue`, `apiErrors.js` (backend `errors[]` → field map), `relativeTime.js`, `jwt.js` (client-side `exp` decode, display only) | live |
+
+Forgot/reset-password screens (named in the P6.2 prompt) were **not built** — no backend session
+ever implemented `POST /api/auth/forgot-password`/`reset-password`, despite both appearing in
+master §11's aspirational "complete target surface." See ADR-034 for this and five smaller
+frontend/backend surface gaps found the same way while building Phase 6.
 
 ## Async model (P4.6/S4.6)
 
@@ -288,6 +333,12 @@ Neon (PostgreSQL), Upstash (Redis) — see master §18.
 - **Port 8080 already in use** — a previous `spring-boot:run` may still be running;
   `pkill -f com.securevault.SecureVaultApplication` (Linux/macOS) or find the process and
   stop it before retrying.
+- **Frontend gets CORS errors** — confirm the backend is running with `APP_CORS_ORIGINS`
+  covering `http://localhost:5173` (the default) and that `frontend/.env.local`'s
+  `VITE_API_BASE_URL` points at the right backend port.
+- **Login works but every other request 401s** — check `frontend/.env.local` exists (Vite
+  won't read `.env.example`); a missing `VITE_API_BASE_URL` falls back to a relative URL that
+  won't reach a backend on a different port.
 
 ---
-_Last updated: S5.8 — 2026-08-11._
+_Last updated: S6.8 — 2026-08-11._

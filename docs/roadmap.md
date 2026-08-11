@@ -9,7 +9,7 @@ session log; this file is the static map both `progress.md` and every AI agent p
 forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching entry in
 `docs/progress.md`'s SESSION LOG.
 
-**Progress: 32 / 53 sessions complete. Milestone 1 complete. Phase 2 complete. Phase 3 complete. Phase 4 complete. Milestone 2 complete. Phase 5 complete.**
+**Progress: 40 / 53 sessions complete. Milestone 1 complete. Phase 2 complete. Phase 3 complete. Phase 4 complete. Milestone 2 complete. Phase 5 complete. Phase 6 complete.**
 
 ---
 
@@ -79,14 +79,14 @@ forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching 
 
 ### Phase 6 — React frontend
 *(master §16 maps Phase 6 to both M3 and M4 — frontend work is expected to span the boundary.)*
-- [ ] **S6.1** — Vite scaffold, Tailwind, router, axios interceptors, Redux store
-- [ ] **S6.2** — Auth screens + protected routes + MFA
-- [ ] **S6.3** — Vault UI — list, search, filter, pagination, CRUD, reveal/copy
-- [ ] **S6.4** — Generator + live strength meter
-- [ ] **S6.5** — Sharing UI + trash/restore
-- [ ] **S6.6** — Dashboard & analytics
-- [ ] **S6.7** — Admin console + audit log viewer
-- [ ] **S6.8** — Polish
+- [x] **S6.1** — Vite scaffold, Tailwind, router, axios interceptors, Redux store — *2026-08-11*
+- [x] **S6.2** — Auth screens + protected routes + MFA — *2026-08-11*
+- [x] **S6.3** — Vault UI — list, search, filter, pagination, CRUD, reveal/copy — *2026-08-11*
+- [x] **S6.4** — Generator + live strength meter — *2026-08-11*
+- [x] **S6.5** — Sharing UI + trash/restore — *2026-08-11*
+- [x] **S6.6** — Dashboard & analytics — *2026-08-11*
+- [x] **S6.7** — Admin console + audit log viewer — *2026-08-11*
+- [x] **S6.8** — Polish — *2026-08-11*
 
 ---
 
@@ -113,4 +113,4 @@ forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching 
 - [ ] **S9.2** — Demo rehearsal + evidence pack: full user journey in under 8 minutes, fallback screenshots for cold-start delays
 
 ---
-_Total: 53 sessions across 10 phases. Last updated: S5.8 — 2026-08-11._
+_Total: 53 sessions across 10 phases. Last updated: S6.8 — 2026-08-11._

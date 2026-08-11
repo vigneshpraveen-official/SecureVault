@@ -1,19 +1,19 @@
 # SecureVault — Progress Log
 
 ## CURRENT STATE
-- Phase: 5 — Sharing, sessions, platform hardening (**complete**) — Milestone 3 in progress (Phases 5-6; Phase 6 frontend still ahead)
-- Last session: S5.8 (OpenAPI documentation and admin module)
-- Build: green | Tests: 13 passing (unchanged — Phase 5 verification is entirely live curl/psql/Redis/MailHog/Swagger evidence, same pattern as every prior phase; JUnit+Testcontainers integration tests arrive in Phase 7, D-16) | Migrations applied: V0-V4 (Phases 1-4), V5 (`credential_shares`), V6 (`refresh_tokens`), V7 (`mfa_and_devices` + `refresh_tokens.device_fingerprint`), V8 (`login_attempts_and_alerts`), V9 (`notifications`)
+- Phase: 6 — React frontend (**complete**) — Milestone 3 complete (Phases 5-6). Milestone 4 (Phases 6-9) in progress.
+- Last session: S6.8 (frontend polish — responsive, accessibility, error boundary, session-expiry UX, performance, consistency pass)
+- Build: backend green (unchanged, no backend code touched this phase) | Frontend: `npm run build` green, `oxlint` clean, no source maps in `dist/`, no `console.log` in `src/` | No new migrations — Phase 6 is frontend-only
 - Working branch: main (personal fork repo only; no central-repo remote configured yet — see ADR-006)
-- Next session: S6.1 — Frontend scaffold (Vite, Tailwind, router, axios interceptors, Redux store)
-- Open blockers: ERD PNG export is still a manual dbdiagram.io step (DBML source not yet regenerated for Phase 5's 7 new tables either). S9.1 (central-repo push) remains blocked pending mentor push/branch instructions (ADR-006). Swagger-disabled-in-prod (application-prod.yml) and Neon/Upstash-specific settings are declared but not live-verified — no prod infra exists yet (Phase 8).
-- Commit cadence: **one commit per phase**, not per session (ADR-008) — Phase 5's eight sessions land in a single commit
-- Full phase/milestone tracker: `docs/roadmap.md` (32/53 sessions done, Milestone 1 complete, Phase 2-4 complete, Milestone 2 complete, **Phase 5 complete**)
+- Next session: S7.1 — Service unit tests (JUnit 5 + Mockito)
+- Open blockers: ERD PNG export is still a manual dbdiagram.io step. S9.1 (central-repo push) remains blocked pending mentor push/branch instructions (ADR-006). Swagger-disabled-in-prod and Neon/Upstash settings remain unverified against real prod infra (Phase 8). **New this phase:** six frontend/backend surface gaps found while building the UI against the real API (forgot/reset password, favorite-toggle write, trash deletion-date field, admin alert-dismiss, admin all-devices, admin last-login — all documented in ADR-034, none faked in the UI). **Also found:** a real backend bug — an admin-imposed account lock on a user with no prior failed login attempts is silently auto-cleared on that user's next login, because `CustomUserDetailsService`'s auto-unlock heuristic (P5.5) can't distinguish an admin lock from a stale brute-force lock (ADR-035, not fixed — out of scope for a frontend-only phase, flagged for a future backend session).
+- Commit cadence: **one commit per phase**, not per session (ADR-008) — Phase 6's eight sessions land in a single commit
+- Full phase/milestone tracker: `docs/roadmap.md` (40/53 sessions done, Milestone 1 complete, Phase 2-4 complete, Milestone 2 complete, Phase 5 complete, **Phase 6 complete**)
 
 ## NEXT UP
-1. S6.1 — Frontend scaffold (Vite, Tailwind, router, axios interceptors, Redux store)
-2. S6.2 — Auth screens + protected routes + MFA
-3. S6.3 — Vault UI (list, search, filter, pagination, CRUD, reveal/copy)
+1. S7.1 — Service unit tests (JUnit 5 + Mockito, no Spring context)
+2. S7.2 — Integration tests (Testcontainers + real PostgreSQL)
+3. S7.3 — Security test matrix (route × actor × expected status)
 
 ---
 ## SESSION LOG
@@ -529,3 +529,122 @@ visible at a glance across daily/ad-hoc sessions and across AI tools.
 **Verified:** `GET /v3/api-docs` is valid OpenAPI 3.1 JSON, 39 paths, 8 tags, `bearerAuth` scheme present; Swagger UI loads (200); a genuinely separate non-admin user gets 403 on all four `/api/admin/**` routes, an admin gets 200 with correct paginated/filtered data on all four, including lock/unlock actually taking effect on subsequent login attempts.
 **Blockers:** none (the one real bug this session touched — cache bypassing the admin check — was S5.7's `/stats` endpoint, fixed there and confirmed still holding once `@PreAuthorize` replaced the manual check)
 **Commit:** _batched — see Phase 5 close, ADR-008._
+
+### S6.1 — 2026-08-11 — Frontend scaffold
+**Mentor tasks:** (session, no numbered M-task — Phase 6 infrastructure)
+**Done:**
+- `frontend/` scaffolded with Vite + React (pinned to React 18 per D-14 — Vite's current default is React 19; ADR-031), Tailwind v4 (CSS-first `@theme` config, `@tailwindcss/vite` plugin, no `tailwind.config.js`).
+- `src/api/client.js` — one axios instance: request interceptor attaches the bearer token; response interceptor detects a 401 from a request that actually carried a token, queues concurrent 401s behind a single in-flight `/api/auth/refresh` call, retries them with the rotated token, clears auth and signals `onAuthExpired` on refresh failure, and never retries the refresh/login/register/mfa-challenge endpoints themselves (loop guard via `config._retry` + an `AUTH_ENDPOINTS` allowlist). `apiRequest()` unwraps `ApiResponse.data` centrally.
+- Redux Toolkit store: `authSlice` (register/login/MFA-challenge/logout thunks, tokens+user persisted to localStorage via `tokenStore.js`) and a `vaultSlice` scaffold — thunks chosen over RTK Query (ADR-032) since the required interceptor/refresh-queue logic lives naturally in a plain axios client, not underneath RTK Query's own `baseQuery`.
+- `react-router-dom` with `ProtectedRoute`/`AdminRoute` guards, `AppLayout`.
+- Base component set: `Button`, `Input`, `Card`, `Modal` (focus trap, Escape-to-close), `Table`, `Badge`, `Spinner`, `EmptyState`.
+- `.env.example` (`VITE_API_BASE_URL`) — backend's `APP_CORS_ORIGINS` already defaulted to `http://localhost:5173`, confirmed via a live `OPTIONS` preflight.
+**Files:** `frontend/` (new — `src/api/`, `src/app/`, `src/features/auth/`, `src/features/vault/`, `src/components/`, `src/pages/`, `vite.config.js`, `index.html`, `.env.example`)
+**Decisions:** ADR-031 (React 18/Tailwind v4 pins), ADR-032 (thunks over RTK Query)
+**Verified:** `npm run build` and `oxlint` both clean; dev server serves the SPA shell (200); live curl against the running backend confirmed the login/vault/refresh response shapes match exactly what `client.js`/`authSlice.js` expect, including the two 401 shapes (no-token vs tampered-token, both `errorCode: INVALID_CREDENTIALS` — the backend has no separate access-token-expiry error code, so the interceptor treats any 401 on a token-bearing, non-auth-endpoint request as "attempt one refresh," documented in `client.js`); replaying an already-rotated refresh token confirmed `401 TOKEN_INVALID`, matching the retry-loop guard's assumptions.
+**Blockers:** none
+**Commit:** _batched — see Phase 6 close, ADR-008._
+
+### S6.2 — 2026-08-11 — Auth screens
+**Mentor tasks:** (session, no numbered M-task — Phase 6 infrastructure)
+**Done:**
+- `RegisterPage` — client-side validation mirroring `UserRegisterRequest` exactly (`registerValidation.js`, same length/complexity rules as `docs/validation.md`), live debounced (400ms) `StrengthMeter` calling `POST /api/password/strength`, field errors driven by the backend's `errors[]` array (`fieldErrorsFrom`, concatenates multiple messages per field rather than overwriting).
+- `LoginPage` — password never touches Redux/localStorage/any log; on `mfaRequired`, the challenge token is held in Redux state only (never persisted) and the same page swaps to an MFA code form; a wrong code does not lose the challenge token (mirrors the backend's peek/invalidate design, ADR-026) so the user can retry within the 2-minute window; redirects to the originally-requested route (`location.state.from`) after success.
+- Logout wired in `AppLayout` via `logoutUser` thunk (S6.1) — clears tokens locally even if the network call fails.
+- Forgot/reset-password screens **deliberately not built** — no backend session ever implemented those endpoints (ADR-034).
+**Files:** `pages/{LoginPage,RegisterPage}.jsx`, `features/auth/registerValidation.js`, `utils/apiErrors.js`, `components/StrengthMeter.jsx`, `hooks/useDebouncedValue.js`
+**Decisions:** none new (forgot/reset-password gap folded into ADR-034 at phase close)
+**Verified live, full matrix:** register → 201 with no `passwordHash`; duplicate email → 409; weak password → 400 with the exact field messages the form displays; wrong password → generic "Invalid email or password" (same message a locked account gets, confirmed the frontend never invents a different wording); MFA: enabled a real TOTP secret on a throwaway account, wrong code → 401 `MFA_INVALID` with the challenge token still valid, correct code on the same token → real tokens, response shape matches `persistSession()` exactly.
+**Blockers:** none
+**Commit:** _batched — see Phase 6 close, ADR-008._
+
+### S6.3 — 2026-08-11 — Vault UI
+**Mentor tasks:** (session, no numbered M-task — Phase 6 infrastructure)
+**Done:**
+- `VaultPage` — table (title/favicon/username/category/strength/updated/actions), every `GET /api/vault` parameter wired (page/size/sortBy/direction/category/title/username/website) through a `vaultSlice` `query` object synced to the URL (survives refresh, shareable). Search box debounced 300ms and mapped to the AND-filtered paginated endpoint, not the separate OR `GET /api/vault/search?q=` (would break pagination totals — documented in `VaultFilters.jsx`).
+- Create/edit modal (`CredentialFormModal`) with title/username/password/website/category/notes; a "Generate" button (full panel arrives S6.4).
+- Reveal-on-demand (`useRevealPassword`) — fetches the single credential only on click, 20s auto-hide, clipboard copy with a documented best-effort 30s clear (can't guarantee it won't clobber an unrelated later copy — no clipboard API supports "clear only if still ours").
+- Delete → confirm → soft delete → toast with an "Undo" action calling restore.
+- `FaviconIcon` fetches `{origin}/favicon.ico` directly from the site itself, not a third-party aggregator (Google's `s2/favicons` etc.) — avoids leaking every saved site's domain to a third party on every render of a password manager's vault list.
+- Favorite indicator shown **read-only** — `CredentialCreateRequest`/`UpdateRequest` have no `favorite` field, and `CredentialMapper` explicitly `@Mapping(target = "favorite", ignore = true)`s it on both create and update, a deliberate prior exclusion this session did not reverse (ADR-034).
+**Files:** `pages/VaultPage.jsx`, `features/vault/{vaultSlice,VaultFilters,CredentialFormModal,FaviconIcon,categories,credentialValidation}.js(x)`, `components/{Table,Pagination,ConfirmDialog}.jsx`
+**Decisions:** none new (favorite-toggle gap folded into ADR-034 at phase close)
+**Verified live, full CRUD cycle:** create → appears in a `title`/`category`-filtered paginated query with the exact response shape `Pagination.jsx` expects (`currentPage`/`pageSize`/`totalElements`/`totalPages`) → reveal returns the decrypted password → edit → soft delete (204) → confirmed `totalElements: 0` under the same filter → restore → confirmed `totalElements: 1` again → permanent delete (204).
+**Blockers:** none
+**Commit:** _batched — see Phase 6 close, ADR-008._
+
+### S6.4 — 2026-08-11 — Generator and strength UI
+**Mentor tasks:** (session, no numbered M-task — Phase 6 infrastructure)
+**Done:**
+- `GeneratorPanel` — length slider (8-64), toggles for every character class + exclude-ambiguous, regenerate, copy, "Use this password" writes straight into the open `CredentialFormModal`. Every generation call hits `POST /api/password/generate` — no client-side reimplementation of generation or scoring.
+- `StrengthMeter` (built S6.2) reused verbatim in both `RegisterPage` and `CredentialFormModal` — five-segment bar, label, entropy bits, backend feedback list.
+- `PasswordHealthWidget` (`GET /api/vault/health`) — score dial + weak/reused/stale/total counts, added to `VaultPage`. Deliberately does **not** show a "fix these first" list — that endpoint has no per-credential field to link from (only aggregate counts); the richer `GET /api/dashboard/password-health` (with `topItemsToFix`) is a different endpoint, consumed by the dashboard in S6.6.
+- Found and fixed a real nested-modal bug while wiring the generator into the credential form: opening the generator from inside the credential-edit modal meant **both** modals' `Escape` listeners fired on one keypress, closing both at once. Fixed with a small `modalStack.js` (tracks open-modal order; only the top-most modal's listener acts) — `Modal.jsx`'s `aria-labelledby` also switched from a hardcoded id to `useId()`, since two simultaneously-open modals were rendering a duplicate DOM id.
+**Files:** `features/password/{GeneratorPanel,PasswordHealthWidget}.jsx`, `components/{ScoreDial,Modal,modalStack}.js(x)` (`Modal.jsx` modified)
+**Decisions:** none new (nested-modal fix documented inline; no locked decision touched)
+**Verified live:** `POST /api/password/generate` with a custom config (24 chars, no symbols, ambiguous excluded) returns a password + strength matching the request; the "no character class enabled" 400 (`errorCode VALIDATION_FAILED`, field `generateRequest`) surfaces its real message in a toast, not the generic one; `GET /api/vault/health` shape confirmed against `PasswordHealthWidget`'s fields exactly.
+**Blockers:** **Found and fixed live:** the nested-modal double-Escape-close bug above.
+**Commit:** _batched — see Phase 6 close, ADR-008._
+
+### S6.5 — 2026-08-11 — Sharing, trash, history UI
+**Mentor tasks:** (session, no numbered M-task — Phase 6 infrastructure)
+**Done:**
+- `ShareDialog` (recipient email, permission, optional expiry) opened from a vault row; backend's `SELF_SHARE_NOT_ALLOWED`/`SHARE_ALREADY_EXISTS`/`USER_NOT_FOUND` messages shown verbatim, not re-worded.
+- `SharingPage` — "Shared with me" (reveal/copy always available; Edit button rendered only when `permission === 'EDIT'`, a UX nicety since the server enforces the real boundary via `AccessEvaluator` regardless) and "Shared by me" (permission dropdown → `PUT /api/share/{id}`, revoke with confirmation).
+- Editing a received EDIT-permission credential fetches the real `CredentialDetailResponse` first (`ShareResponse` only carries title/owner/permission, not username/website/notes/category) — and immediately discards the decrypted `password` field from that response before storing anything in component state, since the edit form never needs or displays it.
+- `TrashPage` — restore, and permanent-delete behind a **double confirmation** (a danger-styled dialog plus a type-to-confirm "delete" input, matching the "no second trash, no recovery" warning). The "Deleted" column shows `updatedAt` (the list DTO has no dedicated `deletedAt` field, but a soft delete sets both in the same write, so it's accurate, not fabricated — ADR-034).
+- `HistoryDrawer` — version + timestamp only, with UI copy explicitly framing "no historical passwords, not even to the owner" as intentional security (P4.2/S4.2's own hardening decision), not a missing feature.
+**Files:** `pages/{SharingPage,TrashPage}.jsx`, `features/sharing/{ShareDialog,expiry}.js(x)`, `features/vault/HistoryDrawer.jsx`
+**Decisions:** trash deletion-date gap folded into ADR-034
+**Verified live with two genuinely distinct accounts:** owner shares READ → recipient reveals, denied on update (403) → owner upgrades to EDIT → recipient updates (200) → owner revokes → recipient denied (403) immediately; trash: soft delete → appears in `GET /api/vault/trash` → restore → gone from trash; permanent delete confirmed 204.
+**Blockers:** none
+**Commit:** _batched — see Phase 6 close, ADR-008._
+
+### S6.6 — 2026-08-11 — Dashboard and analytics
+**Mentor tasks:** (session, no numbered M-task — Phase 6 infrastructure)
+**Done:**
+- `DashboardPage` — summary cards (total/favorites/shared-in/shared-out/trash, linking to the relevant page), `PasswordHealthCard` (score dial + band counts + `topItemsToFix` links, from `GET /api/dashboard/password-health` — the endpoint that actually has per-credential fix suggestions, unlike S6.4's vault-health widget), `RecentActivity` (human-readable descriptions + relative time, e.g. "2 hours ago"), `SecurityAlerts` (severity-colored, **read-only** — no dismiss/resolve endpoint exists anywhere in the API, `resolved` is an internal-only flag; ADR-034), `CategoryChart`/`StrengthChart` (horizontal bar lists, plain markup, not SVG or a charting library — ADR-033).
+- Every number renders from a dashboard endpoint response directly; `Promise.allSettled` across all four calls so one failing endpoint doesn't blank the whole page, with a toast if any did fail.
+- Skeleton loaders (not spinners) on every panel.
+**Files:** `pages/DashboardPage.jsx`, `features/dashboard/{SummaryCards,PasswordHealthCard,RecentActivity,SecurityAlerts,CategoryChart,StrengthChart}.jsx`, `components/{Skeleton,ScoreDial}.jsx`, `utils/relativeTime.js`
+**Decisions:** ADR-033 (plain-markup charts over a library)
+**Verified live:** all four dashboard endpoints' response shapes confirmed matching each component's field access exactly (`byCategory` map keys match the category badge palette; `topItemsToFix` items link to `/vault`); a real audit trail (create/delete/permanent-delete/revoke from earlier sessions' live testing) rendered as human-readable recent-activity rows.
+**Blockers:** none
+**Commit:** _batched — see Phase 6 close, ADR-008._
+
+### S6.7 — 2026-08-11 — Admin console and audit viewer
+**Mentor tasks:** (session, no numbered M-task — Phase 6 infrastructure)
+**Done:**
+- `AdminPage` (tabs: Overview/Users/Audit logs/Security monitoring), gated by `AdminRoute` (redirects a non-admin to `/`) **and** every underlying call still hits `@PreAuthorize`-protected endpoints — the route guard is UX only, never the real boundary.
+- `AdminOverview` (`GET /api/admin/stats`), `AdminUsersTable` (paginated/searchable, role/status/MFA-state columns, lock/unlock with confirmation — no "last login" column, `AdminUserResponse` has no such field), `AdminAuditLogViewer` (user id/action/date-range filters, paginated, local-timezone display with the raw UTC ISO string on hover via `title`), `AdminSecurityMonitoring` (login-attempts + alerts, both admin-scoped via `?all=true` — **not** an admin-wide device list, since `GET /api/monitoring/devices` never grew that scope, unlike login-attempts/alerts; ADR-034).
+**Files:** `pages/AdminPage.jsx`, `features/admin/{AdminOverview,AdminUsersTable,AdminAuditLogViewer,AdminSecurityMonitoring}.jsx`
+**Decisions:** admin-all-devices and last-login gaps folded into ADR-034; the admin-lock auto-clear bug found here is ADR-035
+**Verified live:** a genuinely separate non-admin JWT gets 403 on all three admin-scoped API calls the page makes; promoting a fresh account to ADMIN and logging in fresh gets 200 with real paginated data on all of them; lock/unlock, audit-log action filtering (confirmed `action=CREATE` returns only `CREATE` rows), and `?all=true` login-attempts/alerts all verified against real data.
+**Blockers:** **Found live, not fixed (ADR-035):** an admin-imposed lock on a user with zero prior failed login attempts is silently cleared by `CustomUserDetailsService`'s existing auto-unlock heuristic (P5.5) on that user's very next login — confirmed via direct SQL before/after. Backend logic from an earlier phase, out of scope to patch mid-frontend-phase; flagged for a future backend session.
+**Commit:** _batched — see Phase 6 close, ADR-008._
+
+### S6.8 — 2026-08-11 — Frontend polish
+**Mentor tasks:** (session, no numbered M-task — Phase 6 infrastructure)
+**Done:**
+- **Responsive:** replaced the sub-`sm:` nav (previously just *hidden*, leaving mobile users with no navigation at all) with a fixed bottom tab bar below `sm:`; verified the vault table (horizontal scroll wrapper) and modals (max-width + padding) at a 360px viewport.
+- **Async states:** found and fixed a real gap — `VaultPage`'s list-fetch failure was indistinguishable from "you have zero credentials" (both landed on the same empty state); added a distinct error state with Retry, and a toast on `vaultSlice` fetch rejection. Same fix applied to `DashboardPage` (toasts if any of its four parallel calls fails).
+- **Accessibility:** every input has a `<label>`; `Modal` has real focus-trapping + Escape-to-close, now correct for nested modals (S6.4's fix) with a unique `aria-labelledby` per instance; global `:focus-visible` ring in `index.css`; `react-hot-toast` provides `aria-live`/`role` on toasts natively.
+- **Error boundary + 404:** `ErrorBoundary` (class component, `componentDidCatch`) wraps the whole app in `main.jsx`; `NotFoundPage` already existed since S6.1.
+- **Session expiry UX:** `SessionExpiryWarning` polls the current access token's `exp` claim (client-side decode only, never verified — display purposes only) and toasts a warning ~60s before it rolls over; re-arms after every silent refresh since the token itself rotates.
+- **Performance:** route-level code splitting via `React.lazy` for every page except Login/Register (the first thing an unauthenticated visitor needs); `VaultRow` extracted and wrapped in `React.memo` with stable `useCallback` handlers from `VaultPage` so one row's reveal toggle doesn't re-render the other 19; confirmed `dist/` has zero `.map` files and `src/` has zero `console.log`/`console.debug` calls.
+- **Consistency audit:** found and fixed two duplicated hand-rolled patterns — the icon-only row-action buttons (reveal/copy/edit/delete/share/history/revoke/regenerate), previously copy-pasted with an identical className string across `VaultRow`/`SharingPage`/`GeneratorPanel`, consolidated into one `IconButton` component; the tab-switcher markup, previously duplicated verbatim between `SharingPage` and `AdminPage`, consolidated into one `Tabs` component.
+**Files:** `components/{AppLayout,ErrorBoundary,IconButton,Tabs,Modal}.jsx`, `features/auth/SessionExpiryWarning.jsx`, `features/vault/VaultRow.jsx` (new), `utils/jwt.js`, `app/router.jsx` (lazy routes), `main.jsx`, `pages/{VaultPage,DashboardPage,SharingPage,AdminPage}.jsx`
+**Decisions:** none new (this session's findings are quality fixes, not architectural choices)
+**Verified:** `npm run build` — per-route chunks confirmed in the output (`VaultPage-*.js`, `AdminPage-*.js`, etc., not one monolithic bundle); `oxlint` clean; dev server + backend both confirmed healthy after every change.
+**Blockers:** none
+**Commit:** _batched — see Phase 6 close, ADR-008._
+
+### Phase 6 close — docs, ADRs, roadmap/progress update
+**Done:**
+- `docs/decisions.md` — ADR-031 (React 18/Tailwind v4 pins), ADR-032 (thunks over RTK Query), ADR-033 (plain-markup charts), ADR-034 (six frontend/backend surface gaps, tracked not faked), ADR-035 (admin-lock auto-clear bug, found live, not fixed — flagged for a future backend session).
+- `docs/guide.md` — architecture diagram updated (frontend marked live), new "Frontend module map" section, frontend run commands, `VITE_API_BASE_URL` documented, two new troubleshooting entries.
+- `docs/roadmap.md` — S6.1-S6.8 ticked; progress line → 40/53, **Phase 6 complete**.
+- `docs/progress.md` — this file: CURRENT STATE rewritten, S6.1-S6.8 session log entries appended, NEXT UP → S7.1-S7.3.
+- No changes needed to `docs/db-design.md`/`docs/api-contract.md`/`postman/` — Phase 6 added no backend endpoints, schema, or migrations.
+**Verified:** backend `mvn clean verify` unaffected (green, unchanged); frontend `npm run build` + `oxlint` both clean at phase close.
+**Commit:** `feat(phase-6): React 18 frontend — auth, vault, sharing, dashboard, admin console (M-frontend)` (pending user approval per ADR-008 — see AskUserQuestion in this session).
