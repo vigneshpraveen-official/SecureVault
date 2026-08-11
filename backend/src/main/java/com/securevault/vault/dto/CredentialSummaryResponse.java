@@ -18,5 +18,9 @@ public record CredentialSummaryResponse(
         Category category,
         boolean favorite,
         Integer strengthScore,
+        // Number of password changes on record (P4.4/S4.2) — populated via one batched aggregate
+        // query per list call, never a per-row lazy-collection fetch. See
+        // docs/evidence/milestone-2/n-plus-one.md for why.
+        int historyCount,
         Instant createdAt,
         Instant updatedAt) {}

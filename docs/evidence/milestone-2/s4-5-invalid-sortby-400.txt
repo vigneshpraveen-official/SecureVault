@@ -1,0 +1,2 @@
+{"success":false,"message":"Validation failed","data":null,"errorCode":"VALIDATION_FAILED","errors":[{"field":"list.sortBy","message":"must be one of: title, username, websiteUrl, category, favorite, strengthScore, createdAt, updatedAt"}],"timestamp":"2026-08-11T10:25:51.790943783Z"}
+HTTP:400

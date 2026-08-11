@@ -10,6 +10,5 @@ spring:
     user: postgres
     password: CHANGE_ME
 
-logging:
-  level:
-    com.securevault: DEBUG
+# Per-profile logger levels now live in logback-spring.xml (P4.7) — single source of truth,
+# not duplicated here.

@@ -296,3 +296,212 @@ worse condition).
 for that row. `GET /api/vault/health` scales linearly with the user's credential count (one
 decrypt per credential) — acceptable at this project's scale; revisit if profiling ever shows
 otherwise.
+
+### ADR-017 — Synchronous audit writes (not AOP), no FK from AuditLog, test-only rollback-proof flag
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P4.1/M-31,M-32 requires that an audit-write failure roll back the business operation
+it was recording. An AOP aspect (`@Around`/`@AfterReturning` on service methods) would be the
+architecturally cleaner way to add audit as a cross-cutting concern, decoupled from every
+service method's own code — but the mentor's actual requirement is stronger than "record an
+audit entry": it's "if the audit entry can't be written, the business write must not happen
+either." An aspect running in its own advice, especially anything `@Async`, cannot guarantee
+that; only code inside the *same* `@Transactional` method, in the *same* transaction, can.
+**Decision:** `AuditService.record(...)` is called as a plain synchronous method call from
+inside `CredentialServiceImpl`'s `create`/`update`/`delete`/`restore`/`permanentDelete` — the
+same transactional boundary as the row it's describing, so a `RuntimeException` from the audit
+write rolls back everything else in that method too (Spring's default rollback-on-RuntimeException
+behavior does the rest; no manual rollback code needed). `AuditLog` deliberately has no JPA
+relationship to `User` or `Credential` — `performedBy`/`entityId` are plain `Long` columns, not
+FKs — so an audit row physically cannot be cascade-deleted when the entity it describes is
+permanently removed (P4.3's explicit requirement that "audit logs MUST remain untouched"), and a
+future audit-log-listing endpoint can never N+1 against `users`/`credentials` by construction
+(there's no relationship to lazily walk). Proven with a test-only `app.testing.force-audit-failure`
+flag (`@Value`, defaults `false`) in `AuditServiceImpl` that throws before the row is persisted —
+flipped on via env var for one deliberate run, verified live: `credentials` and `audit_logs` row
+counts identical before and after a forced-failure create attempt (`docs/evidence/milestone-2/s4-1-rollback-*`),
+then flipped off and the same request verified to succeed and write both rows.
+**Alternatives:** AOP aspect around service methods (rejected — cannot guarantee the same
+transactional boundary as the business write, especially if the aspect itself needs its own
+proxy/advice ordering relative to `@Transactional`, and it obscures exactly where the audit call
+happens for a reviewer); a database trigger (rejected — moves business logic out of the
+application layer entirely, invisible to code review, and can't easily express "field names
+changed" style human-readable `details`); `@Async` audit writes (rejected outright — directly
+contradicts the requirement; an async write finishes after the caller's transaction has already
+committed, so it can never roll anything back).
+**Consequences:** Every future credential-mutating method must remember to call
+`auditService.record(...)` inside its own `@Transactional` boundary — there is no automatic
+enforcement (an AOP aspect would have given that "free," at the cost of the guarantee above). A
+code-review checklist item, not a compiler-enforced one.
+
+### ADR-018 — Soft-delete convention: explicit `*DeletedFalse` queries, no-op restore instead of 409
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P4.3/M-37..M-39 replaces `Credential`'s hard delete with soft delete and adds
+restore/trash/permanent-delete. Two design questions the prompt explicitly asks to be decided
+and documented: (1) how do "active" queries exclude deleted rows, given trash/restore/permanent
+delete need to see them; (2) what happens when `restore` is called on a credential that's
+already active.
+**Decision:** (1) Every repository method that should only see active rows is named explicitly —
+`findByUserIdAndDeletedFalse`, `findByIdAndDeletedFalse`, `search(...)` with an explicit
+`AND c.deleted = false` in its JPQL — rather than a blanket `@Where`/`@SQLRestriction` on the
+`Credential` entity. A class-level filter would apply invisibly everywhere, including
+`findByUserIdAndDeletedTrue` (trash) and the plain `findById` used by restore/permanent-delete,
+which need to see deleted rows by design; whether a given query is deleted-aware becomes
+answerable by reading its method name, not by knowing about a filter declared somewhere else on
+the entity. A parallel private helper split mirrors this at the service layer: `loadOwned(...)`
+(excludes deleted, used by get/update/soft-delete/history) vs. `loadOwnedAny(...)` (sees
+everything, used only by restore/permanent-delete). (2) `restore` on an already-active credential
+is a **no-op** — 200, current unchanged state — not a 409. Master §9's `ErrorCode` enum is a
+fixed, locked list with no code that fits "already active" (`SHARE_ALREADY_EXISTS` and
+`SELF_SHARE_NOT_ALLOWED` are the only similarly-shaped codes, both sharing-specific); adding a
+new code is a locked-decision change this session doesn't have standing to make unilaterally.
+Restore is naturally idempotent, so treating a repeat call as a no-op is also just correct
+behavior, not merely a workaround.
+**Alternatives:** `@SQLRestriction("deleted = false")` on the entity (rejected — exactly the
+invisible-scope-creep problem above: it would silently apply to trash/restore/permanent-delete
+queries too unless each one used a native/bypass query, which is worse ergonomics than naming
+each query explicitly); inventing a new `ErrorCode.CREDENTIAL_ALREADY_ACTIVE` for restore
+(rejected — touches the locked master §9 enum without an ADR-and-mentor-sign-off cycle this
+session doesn't have time for, and a no-op is arguably the more correct REST semantic for an
+idempotent state-setting operation regardless).
+**Consequences:** Any new query added to `CredentialRepository` must be named to make its
+deleted-awareness explicit. Any future soft-deletable entity should follow the same
+`loadOwned`/`loadOwnedAny` split rather than reaching for `@SQLRestriction`.
+
+### ADR-019 — Password history: reuse window exactly 5, ciphertext reused not re-encrypted, version endpoint never exposes plaintext
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P4.2/M-35,M-36 requires the last 5 passwords to be unreusable and versioned history
+that "stays AES encrypted at all times," plus a history-listing endpoint the prompt explicitly
+hardens: "never return the historical passwords, not even decrypted, not even to the owner."
+**Decision:** `PasswordHistoryRepository.findTop5ByCredentialIdOrderByVersionDesc` caps the reuse
+window at the query level (`LIMIT`/`fetch first`), not by fetching all history and truncating in
+Java — the database enforces "last 5," not application code that could get the slice logic
+wrong. When a password actually changes, the credential's **current** `encrypted_password` string
+is copied into history as-is (no decrypt-then-re-encrypt round trip) — it's already correctly
+AES-GCM-encrypted with its own IV, and re-encrypting it would be pointless extra work that also
+changes nothing about its correctness. `GET /api/vault/{id}/history` is backed by a JPQL
+constructor-expression query (`SELECT new ...PasswordHistoryVersionResponse(ph.version,
+ph.createdAt) FROM PasswordHistory ph ...`) that never selects the `encrypted_password` column
+into memory at all for that request — a stronger guarantee than "the DTO mapper happens not to
+expose the field," since there is no code path in that method that ever holds the ciphertext.
+Reuse-checking still happens elsewhere (`update(...)`), where the ciphertext legitimately needs
+decrypting to compare against the incoming plaintext.
+**Alternatives:** Fetching all history rows and taking `.limit(5)` in Java (rejected — trusts
+application code to get "last 5" right on every call site, instead of the database enforcing it
+structurally once); re-encrypting the current password into a fresh history ciphertext
+(rejected — no correctness benefit, only extra AES operations); reusing `CredentialDetailResponse`-style
+mapping for history and just omitting the password field in the DTO (rejected — omitting a field
+in the *response* type still means the *service* held the plaintext-or-ciphertext in memory at
+some point; the constructor-expression query avoids ever fetching it for this endpoint at all).
+**Consequences:** Any new query needing password-history data must decide up front whether it
+needs the ciphertext (fetch the full entity) or just metadata (add another constructor-expression
+projection) — there is no single "generic" history query to reach for by default.
+
+### ADR-020 — Bounded async executor; AuditService stays synchronous; explicit userId across the async boundary
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P4.6/M-40,M-41 asks for a deliberately-sized thread pool and for specific work
+(simulated email, informational activity logging, bulk password-strength recompute) to move off
+the request thread — plus an explicit, documented understanding that `@Async` runs in a
+different transaction and a different security context than its caller.
+**Decision:** `AsyncConfig`'s `ThreadPoolTaskExecutor` ("taskExecutor" bean): corePoolSize 4,
+maxPoolSize 8, queueCapacity 50, `CallerRunsPolicy` rejection (full reasoning in the class
+javadoc — bounded queue + backpressure-not-drop). `AsyncTaskService` (email, activity logging)
+and `CredentialServiceImpl.recomputeStrengthForUser` (resolves the `TODO(S4.6)` left since S3.3)
+are `@Async("taskExecutor")`. **`AuditService.record(...)` stays synchronous, deliberately** —
+see ADR-017; this is the one thing in the codebase that must NOT move onto this executor, because
+an async write finishes after its caller's transaction has already committed, breaking the
+rollback guarantee entirely. Every async method takes any user identity it needs as an explicit
+`Long userId` parameter — `SecurityContextHolder` is empty on the worker thread, since Spring
+Security's context is stored in a `ThreadLocal` tied to the request thread, not propagated to
+`@Async` by default. A related, separately-found gap: `AuditServiceImpl` originally
+constructor-injected `HttpServletRequest` (a request-scoped proxy) — this threw
+`IllegalStateException: No thread-bound request found` the moment `DevDataSeeder` (S4.5, runs at
+startup, not inside a request) called through to it. Fixed by looking up the request via
+`RequestContextHolder.getRequestAttributes()` per call, returning `null` ip/userAgent when none
+exists, instead of crashing — the same fix incidentally makes `AuditService` safe to call from
+any future `@Async` context too, for the same underlying reason (no request thread bound).
+Similarly, `AsyncConfig`'s executor is given an `MdcTaskDecorator` so log lines from async work
+still carry the originating request's correlation id (found while capturing S4.7 evidence — MDC
+is also `ThreadLocal` and does not propagate to a different thread pool automatically).
+**Alternatives:** Letting `@Async` methods read `SecurityContextHolder` directly (rejected — it's
+empty there by default; `DelegatingSecurityContextAsyncTaskExecutor` could propagate it, but
+explicit parameters are simpler to reason about and impossible to get silently wrong); an
+unbounded queue (rejected — turns overload into an OOM risk instead of a visible, handled
+condition, see `AsyncConfig`'s javadoc).
+**Consequences:** Any new `@Async` method must take its own explicit parameters for anything
+request/security-context-derived: it cannot assume `SecurityContextHolder`, `RequestContextHolder`
+(without a null check), or an open Hibernate session (`open-in-view: false`, ADR-established
+S0.1) are available.
+
+### ADR-021 — `GET /api/vault` dynamic filtering via JPA `Specification`, not string-built JPQL; `PagedResponse` fields finalized to the mentor's spec
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P4.5/M-34 needs pagination, sorting, and up to four independently-optional filters
+(category/title/username/website) freely combinable on one endpoint, always ANDed with owner and
+`deleted = false`. `PagedResponse<T>` (`common/response/`) has existed unused since ADR-013
+(P2.3) with placeholder field names (`page`, `size`); this is the session that actually returns
+one.
+**Decision:** `CredentialSpecifications` (static `Specification<Credential>` builders, one per
+predicate) composed in `CredentialServiceImpl` via plain `if (filter != null) spec = spec.and(...)`
+chaining — never by concatenating query strings. `sortBy` is whitelisted with a Bean Validation
+`@Pattern` against the exact set of sortable `Credential` fields before it ever reaches a
+repository call; an unvalidated `sortBy` would both be a 500 waiting to happen (an invalid JPA
+property path throws at query-execution time, not at the controller boundary) and would leak the
+entity's field names to a caller probing for them. `size` is capped at 100 (`@Max(100)`) for the
+same "don't let a client hand you an unbounded page" reasoning as `password_history`'s LIMIT-5 in
+ADR-019. `PagedResponse`'s fields are renamed to `currentPage`/`pageSize`/`+hasNext` to match the
+mentor's literal spec wording ("content, totalElements, totalPages, currentPage, pageSize, plus
+first/last/hasNext") — a safe rename since the type was genuinely unconsumed until this session
+(confirmed via ADR-013's own "not consumed anywhere yet" note).
+**Alternatives:** Building the query by string-concatenating WHERE clauses per active filter
+(rejected outright — the prompt explicitly forbids it, and it's the textbook path to injection
+bugs and unreadable branching); `@Query` with optional-parameter JPQL (`:title IS NULL OR ...`)
+(rejected — four independent optional filters would need a combinatorial OR-chain per field,
+harder to read and to extend than composable `Specification` predicates); leaving `sortBy`
+unvalidated and catching the resulting exception generically (rejected — turns an avoidable 400
+into a 500-then-caught, and still leaks the schema through the error's stack trace/message
+unless carefully scrubbed).
+**Consequences:** Any new filterable field on `GET /api/vault` gets one more static
+`Specification` method and one more `if`-chained `.and(...)` — the composition pattern is meant
+to scale that way without restructuring. Any new sortable field must be added to both the
+`@Pattern` whitelist and confirmed to be a real `Credential` property name.
+
+### ADR-022 — Production logging: what's never logged, request-scoped correlation ids, size-and-time-based rotation
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P4.7/M-46,M-47 asks for SLF4J logging across every meaningful business event, a
+documented list of what must never appear in a log line, a request correlation id traceable from
+a client-facing error back to the exact log lines, and rotation configuration that won't let logs
+grow unbounded on disk.
+**Decision:** **Never logged, anywhere, at any level** — account passwords (plaintext or
+hashed), vault credential passwords (plaintext or ciphertext), JWTs, the `AES_SECRET_KEY`/`JWT_SECRET`
+values themselves, MFA secrets (once Phase 5 adds them), and full email addresses at WARN/ERROR
+(masked via `LogMasking.maskEmail` — `a***@example.com`, reused by both the async welcome-email
+log and `AuthController`'s failed-login WARN). Business events get `@Slf4j` logging at the level
+matching master §9's own guidance: INFO for state changes (register, login success, credential
+create/update/delete/restore/permanent-delete), DEBUG for high-frequency read/developer detail
+(a single credential reveal — logging every read at INFO would be the noisiest line in the
+class), WARN for recoverable/expected-but-notable conditions (every `BusinessException`, plus a
+dedicated failed-login line with the masked email `GlobalExceptionHandler`'s generic handler
+never sees), ERROR only for the genuinely unexpected catch-all, always with the correlation id
+and full stack trace. `CorrelationIdFilter` (`Ordered.HIGHEST_PRECEDENCE`, ahead of
+`JwtAuthenticationFilter`) puts one UUID per request into the MDC — honoring an incoming
+`X-Correlation-Id` header if present — echoes it back as a response header, and clears it in a
+`finally` so Tomcat's pooled request threads never leak one request's id into the next.
+`GlobalExceptionHandler`'s catch-all now reads that same MDC value instead of minting a fresh
+UUID (S2.3's original behavior) purely for the 500 case, so the id a client can report actually
+matches every surrounding log line, not just one. `logback-spring.xml` uses
+`SizeAndTimeBasedRollingPolicy`: rolls at 10MB or daily, whichever comes first, 7-day
+`maxHistory`, 200MB `totalSizeCap` (oldest archives deleted first once hit); `logs/` is gitignored
+(already was, since S0.1). Per-profile levels (`DEBUG` for `com.securevault` locally, `INFO` in
+prod) live in `logback-spring.xml`'s `<springProfile>` blocks now, not duplicated in
+`application-local.yml`.
+**Alternatives:** A fresh UUID per error instead of the request's own MDC-carried id (rejected —
+S2.3's original approach; strictly worse once a correlation-id filter exists, since it can't be
+grepped alongside the request's other log lines); an unbounded log file (rejected — the default
+`RollingFileAppender` behavior without a policy; would eventually fill the disk); logging full
+emails everywhere and relying on log-access controls alone (rejected — defense in depth per
+master §9's explicit masking instruction; access controls can fail or be misconfigured, a masked
+value in the log itself cannot).
+**Consequences:** Any new log statement touching a password, token, key, or full email must go
+through `LogMasking` or be omitted entirely — this is a review-time check, not something the
+compiler enforces. Any new `@Async` work added later automatically gets correlation-id
+propagation for free via `MdcTaskDecorator`, as long as it goes through the shared "taskExecutor"
+bean.

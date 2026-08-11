@@ -1,0 +1,20 @@
+ credentials_final 
+-------------------
+                69
+(1 row)
+
+ audit_logs_final 
+------------------
+               67
+(1 row)
+
+ id |       title       
+----+-------------------
+ 74 | RollbackProofTest
+(1 row)
+
+ action | entity_type | entity_id 
+--------+-------------+-----------
+ CREATE | CREDENTIAL  |        74
+(1 row)
+

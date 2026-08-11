@@ -1,0 +1,14 @@
+ credentials_after 
+-------------------
+                68
+(1 row)
+
+ audit_logs_after 
+------------------
+               66
+(1 row)
+
+ id | title 
+----+-------
+(0 rows)
+

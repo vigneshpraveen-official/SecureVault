@@ -171,13 +171,15 @@ instead, which write the identical envelope shape by hand.
 
 | Package | Contains | Status |
 |---|---|---|
-| `config/` | `SecurityConfig` — JWT filter chain, CORS, `AuthenticationEntryPoint`/`AccessDeniedHandler` | live |
-| `common/response/` | `ApiResponse<T>` (envelope), `PagedResponse<T>` (reserved for S4.5) | live |
-| `common/exception/` | `ErrorCode`, `BusinessException` + concrete subclasses, `GlobalExceptionHandler` | live |
-| `common/audit/`, `common/util/` | reserved | empty, Phase 4+ |
+| `config/` | `SecurityConfig` (JWT filter chain, CORS, `AuthenticationEntryPoint`/`AccessDeniedHandler`), `AsyncConfig` (`taskExecutor` bean, S4.6), `MdcTaskDecorator` (correlation id across the async boundary, S4.7), `CorrelationIdFilter` (S4.7), `DevDataSeeder` (`local`-profile-only, S4.5) | live |
+| `common/response/` | `ApiResponse<T>` (envelope), `PagedResponse<T>` (first consumed S4.5) | live |
+| `common/exception/` | `ErrorCode`, `BusinessException` + concrete subclasses (incl. `PasswordReusedException`, S4.2), `GlobalExceptionHandler` | live |
+| `common/audit/` | `AuditAction`, `AuditLog`, `AuditLogRepository`, `AuditService`/`Impl` — synchronous, same-transaction audit writes (S4.1, ADR-017) | live |
+| `common/async/` | `AsyncTaskService`/`Impl` — simulated email, activity logging, both `@Async("taskExecutor")` (S4.6) | live |
+| `common/util/` | `LogMasking` (S4.6/S4.7) | live |
 | `security/` | `JwtService`, `JwtAuthenticationFilter`, `UserPrincipal`, `CustomUserDetailsService`, `AuthController` (login), `security/crypto/AesEncryptionService`, `security/dto/` | live |
 | `user/` | `User` entity, `Role`, `UserRepository`, `UserService`/`Impl`, `UserController` (register), `UserMapper`, `user/dto/` | live |
-| `vault/` | `Credential` entity (+ `strengthScore`/`passwordChangedAt`, S3.3), `Category`, `CredentialRepository`, `CredentialService`/`Impl` (incl. `getHealth`), `CredentialController` (full CRUD + search/filter/health), `CredentialMapper`, `vault/dto/` | live |
+| `vault/` | `Credential` entity (+ `strengthScore`/`passwordChangedAt`, S3.3; `deleted`/`deletedAt` wired up S4.3), `PasswordHistory` entity (S4.2), `Category`, `CredentialRepository` (+ `JpaSpecificationExecutor`, S4.5), `CredentialSpecifications` (S4.5), `PasswordHistoryRepository`, `CredentialService`/`Impl` (create/read/update/soft-delete/restore/trash/permanent-delete/health/history/bulk-recompute), `CredentialController`, `CredentialMapper`, `vault/dto/` | live |
 | `password/` | `PasswordStrengthService`/`Impl`, `PasswordGeneratorService`/`Impl`, `PasswordController` (`/strength`, `/generate`), `password/dto/` (incl. the custom `@AtLeastOneCharacterClass` constraint) — no `Entity`/`Repository`, it's a stateless utility feature, not a persisted one | live |
 | `sharing/`, `notification/`, `monitoring/`, `report/`, `admin/` | reserved (package-info only) | empty, Phase 5+ |
 
@@ -185,19 +187,55 @@ Every feature package with real code follows the same shape: `Entity`, `Reposito
 (Spring Data interface), `Service`/`ServiceImpl`, `Controller`, `Mapper` (MapStruct), and a
 `dto/` sub-package for request/response records — see `docs/ai/CONVENTIONS.md`.
 
+## Async model (P4.6/S4.6)
+
+One shared `ThreadPoolTaskExecutor` bean, `"taskExecutor"` (`config/AsyncConfig`) — corePoolSize
+4, maxPoolSize 8, queueCapacity 50, `CallerRunsPolicy`, thread names prefixed `sv-async-`. Two
+kinds of work run on it:
+
+- **Generic** (`common/async/AsyncTaskService`): simulated welcome email on registration,
+  informational login-activity logging. Neither needs feature-specific data.
+- **Feature-specific** (`CredentialService#recomputeStrengthForUser`): bulk password-strength
+  recompute, triggered by `POST /api/vault/recompute-strength` (202 Accepted — the work hasn't
+  finished when the response returns).
+
+**What must never move onto this executor:** `AuditService.record(...)` (`common/audit/`) —
+`@Async` runs in a different transaction than its caller, so an async audit write could never
+roll back with the business operation it's meant to describe (P4.1's core requirement). Every
+`@Async` method takes any user identity it needs as an explicit parameter, since
+`SecurityContextHolder` is empty on the worker thread. `MdcTaskDecorator` (wired into the
+executor) is the one piece of context that *does* cross the boundary — the request's correlation
+id, so async log lines stay traceable to the request that triggered them. Full reasoning: ADR-020.
+
+## Logging (P4.7/S4.7)
+
+`@Slf4j` (Lombok) throughout — DEBUG for developer/high-frequency detail (a single credential
+reveal), INFO for business events (register, login, credential create/update/delete/restore),
+WARN for expected-but-notable conditions (every `BusinessException`, failed login attempts —
+masked email via `common/util/LogMasking`), ERROR only for the catch-all unexpected case, with
+the full stack trace and a correlation id. `config/CorrelationIdFilter` puts one UUID per
+request into the SLF4J MDC (honoring an incoming `X-Correlation-Id` header if present) and
+echoes it back as a response header; `logback-spring.xml`'s pattern includes `%X{correlationId}`
+on every line, console and file both. Console + `RollingFileAppender`
+(`SizeAndTimeBasedRollingPolicy`: 10MB or daily, 7-day history, 200MB total cap); `DEBUG` for
+`com.securevault` locally, `INFO` in prod, both declared in `logback-spring.xml`'s
+`<springProfile>` blocks. `logs/` is gitignored. Full "never logged" list: `docs/decisions.md`
+ADR-022.
+
 ## Database schema
 
 Full target schema, column-by-column, index rationale, and relationship diagram: `docs/db-design.md`.
 ERD source: `docs/erd/securevault.dbml` (paste into dbdiagram.io to render/export).
-Only `users` and `credentials` exist as of S0.3 (`V1__init.sql`) — everything else is
-documented ahead of time and migrated in the phase that needs it.
+`users`, `credentials`, `audit_logs` (V3, S4.1), and `password_history` (V4, S4.2) exist as of
+Phase 4 — everything else is documented ahead of time and migrated in the phase that needs it.
 
 ## API index
 
 Full live index (every real endpoint, request/response DTOs, status/error codes) is
-`docs/api-contract.md`, regenerated from the actual controllers each phase. As of Phase 3:
-register, login, password strength/generation, and full vault CRUD + search/filter/health —
-11 endpoints plus `/actuator/health`.
+`docs/api-contract.md`, regenerated from the actual controllers each phase. As of Phase 4:
+register, login, password strength/generation, and full vault CRUD + paginated
+list/search/filter/health/trash/restore/permanent-delete/history/bulk-recompute —
+16 endpoints plus `/actuator/health`.
 
 ## Testing
 
@@ -221,4 +259,4 @@ Neon (PostgreSQL), Upstash (Redis) — see master §18.
   stop it before retrying.
 
 ---
-_Last updated: S3.3 — 2026-08-11._
+_Last updated: S4.8 — 2026-08-11._

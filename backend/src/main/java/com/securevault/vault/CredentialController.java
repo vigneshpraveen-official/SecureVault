@@ -1,19 +1,25 @@
 package com.securevault.vault;
 
 import com.securevault.common.response.ApiResponse;
+import com.securevault.common.response.PagedResponse;
 import com.securevault.security.UserPrincipal;
 import com.securevault.vault.dto.CredentialCreateRequest;
 import com.securevault.vault.dto.CredentialDetailResponse;
 import com.securevault.vault.dto.CredentialResponse;
 import com.securevault.vault.dto.CredentialSummaryResponse;
 import com.securevault.vault.dto.CredentialUpdateRequest;
+import com.securevault.vault.dto.PasswordHistoryVersionResponse;
 import com.securevault.vault.dto.VaultHealthResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/vault")
 @RequiredArgsConstructor
+@Validated
 public class CredentialController {
 
     private final CredentialService credentialService;
@@ -49,14 +56,41 @@ public class CredentialController {
                         credentialService.getByIdForUser(id, principal.getId())));
     }
 
+    // sortBy is whitelisted against actual entity fields — an unvalidated sortBy is a 500 waiting
+    // to happen (a bad JPA property path) and leaks the schema to the caller (P4.5/M-34).
     @GetMapping
-    public ResponseEntity<ApiResponse<List<CredentialSummaryResponse>>> list(
+    public ResponseEntity<ApiResponse<PagedResponse<CredentialSummaryResponse>>> list(
             @AuthenticationPrincipal UserPrincipal principal,
-            @RequestParam(required = false) Category category) {
+            @RequestParam(defaultValue = "0") @Min(0) Integer page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) Integer size,
+            @RequestParam(defaultValue = "createdAt")
+                    @Pattern(
+                            regexp =
+                                    "title|username|websiteUrl|category|favorite|strengthScore|createdAt|updatedAt",
+                            message =
+                                    "must be one of: title, username, websiteUrl, category,"
+                                            + " favorite, strengthScore, createdAt, updatedAt")
+                    String sortBy,
+            @RequestParam(defaultValue = "desc")
+                    @Pattern(regexp = "(?i)asc|desc", message = "must be asc or desc")
+                    String direction,
+            @RequestParam(required = false) Category category,
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String username,
+            @RequestParam(required = false) String website) {
         return ResponseEntity.ok(
                 ApiResponse.success(
                         "Vault retrieved successfully",
-                        credentialService.listForUser(principal.getId(), category)));
+                        credentialService.listForUser(
+                                principal.getId(),
+                                page,
+                                size,
+                                sortBy,
+                                direction,
+                                category,
+                                title,
+                                username,
+                                website)));
     }
 
     @GetMapping("/search")
@@ -77,6 +111,23 @@ public class CredentialController {
                         "Vault health computed", credentialService.getHealth(principal.getId())));
     }
 
+    // Same literal-beats-variable reasoning as /search and /health above.
+    @GetMapping("/trash")
+    public ResponseEntity<ApiResponse<List<CredentialSummaryResponse>>> trash(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(
+                ApiResponse.success("Trash retrieved", credentialService.trash(principal.getId())));
+    }
+
+    @GetMapping("/{id}/history")
+    public ResponseEntity<ApiResponse<List<PasswordHistoryVersionResponse>>> history(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Password history retrieved",
+                        credentialService.getPasswordHistory(id, principal.getId())));
+    }
+
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<CredentialResponse>> update(
             @AuthenticationPrincipal UserPrincipal principal,
@@ -88,13 +139,37 @@ public class CredentialController {
                         credentialService.update(id, principal.getId(), request)));
     }
 
-    // The one endpoint shape exempt from the ApiResponse envelope: HTTP forbids a response body
-    // on 204 (RFC 9110 §15.3.5), so there is nothing an envelope could wrap (ADR-established
-    // S1.4, reaffirmed here for P2.3/M-27).
+    // Soft delete as of P4.3 — still 204/no body, same envelope exemption as ever (RFC 9110
+    // §15.3.5); the credential moves to the trash rather than being removed.
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(
             @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
         credentialService.delete(id, principal.getId());
         return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{id}/restore")
+    public ResponseEntity<ApiResponse<CredentialResponse>> restore(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Credential restored", credentialService.restore(id, principal.getId())));
+    }
+
+    @DeleteMapping("/{id}/permanent")
+    public ResponseEntity<Void> permanentDelete(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
+        credentialService.permanentDelete(id, principal.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    // 202, not 200/201 — the work hasn't happened yet when this returns (P4.6/M-40). Resolves
+    // the TODO(S4.6) left in CredentialServiceImpl since S3.3.
+    @PostMapping("/recompute-strength")
+    public ResponseEntity<ApiResponse<Void>> recomputeStrength(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        credentialService.recomputeStrengthForUser(principal.getId());
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(ApiResponse.success("Password strength recomputation started", null));
     }
 }

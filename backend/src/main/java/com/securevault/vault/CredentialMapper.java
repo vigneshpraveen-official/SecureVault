@@ -53,7 +53,11 @@ public interface CredentialMapper {
 
     CredentialResponse toResponse(Credential credential);
 
-    CredentialSummaryResponse toSummaryResponse(Credential credential);
+    // historyCount is a second source param, not an entity field — same multi-source pattern as
+    // toDetailResponse's decrypted password below. Callers must compute it via a batched query
+    // (CredentialServiceImpl#toSummaryResponses), never a per-row lazy fetch (P4.4).
+    @Mapping(target = "historyCount", source = "historyCount")
+    CredentialSummaryResponse toSummaryResponse(Credential credential, long historyCount);
 
     @Mapping(target = "password", source = "decryptedPassword")
     CredentialDetailResponse toDetailResponse(Credential credential, String decryptedPassword);

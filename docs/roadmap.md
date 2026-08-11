@@ -9,7 +9,7 @@ session log; this file is the static map both `progress.md` and every AI agent p
 forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching entry in
 `docs/progress.md`'s SESSION LOG.
 
-**Progress: 16 / 53 sessions complete. Milestone 1 complete. Phase 2 complete. Phase 3 complete.**
+**Progress: 24 / 53 sessions complete. Milestone 1 complete. Phase 2 complete. Phase 3 complete. Phase 4 complete. Milestone 2 complete.**
 
 ---
 
@@ -54,14 +54,14 @@ forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching 
 - [x] **S3.3** — Entropy + vault integration — *2026-08-11*
 
 ### Phase 4 — Data integrity, performance, operations
-- [ ] **S4.1** — `@Transactional` + AuditLog with rollback proof (M-31, M-32)
-- [ ] **S4.2** — Password history + reuse prevention (M-35, M-36)
-- [ ] **S4.3** — Soft delete, restore, trash, permanent delete (M-37, M-38, M-39)
-- [ ] **S4.4** — N+1 elimination (M-33)
-- [ ] **S4.5** — Pagination, sorting, dynamic filtering + 50-row seed (M-34)
-- [ ] **S4.6** — Async thread pool + background tasks (M-40, M-41)
-- [ ] **S4.7** — SLF4J + logback-spring.xml (M-46, M-47)
-- [ ] **S4.8** — Milestone 2 evidence pack
+- [x] **S4.1** — `@Transactional` + AuditLog with rollback proof (M-31, M-32) — *2026-08-11*
+- [x] **S4.2** — Password history + reuse prevention (M-35, M-36) — *2026-08-11*
+- [x] **S4.3** — Soft delete, restore, trash, permanent delete (M-37, M-38, M-39) — *2026-08-11*
+- [x] **S4.4** — N+1 elimination (M-33) — *2026-08-11*
+- [x] **S4.5** — Pagination, sorting, dynamic filtering + 50-row seed (M-34) — *2026-08-11*
+- [x] **S4.6** — Async thread pool + background tasks (M-40, M-41) — *2026-08-11*
+- [x] **S4.7** — SLF4J + logback-spring.xml (M-46, M-47) — *2026-08-11*
+- [x] **S4.8** — Milestone 2 evidence pack — *2026-08-11*
 
 ---
 
@@ -113,4 +113,4 @@ forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching 
 - [ ] **S9.2** — Demo rehearsal + evidence pack: full user journey in under 8 minutes, fallback screenshots for cold-start delays
 
 ---
-_Total: 53 sessions across 10 phases. Last updated: S3.3 — 2026-08-11._
+_Total: 53 sessions across 10 phases. Last updated: S4.8 — 2026-08-11._

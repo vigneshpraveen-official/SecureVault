@@ -1,0 +1,6 @@
+Hibernate: select c1_0.id,c1_0.category,c1_0.created_at,c1_0.deleted,c1_0.deleted_at,c1_0.encrypted_password,c1_0.favorite,c1_0.notes,c1_0.password_changed_at,c1_0.strength_score,c1_0.title,c1_0.updated_at,c1_0.user_id,c1_0.username,c1_0.website_url from credentials c1_0 left join users u1_0 on u1_0.id=c1_0.user_id where u1_0.id=? and not(c1_0.deleted)
+Hibernate: select ph1_0.credential_id,ph1_0.id,ph1_0.created_at,ph1_0.encrypted_password,ph1_0.version from password_history ph1_0 where ph1_0.credential_id=?
+Hibernate: select ph1_0.credential_id,ph1_0.id,ph1_0.created_at,ph1_0.encrypted_password,ph1_0.version from password_history ph1_0 where ph1_0.credential_id=?
+Hibernate: select ph1_0.credential_id,ph1_0.id,ph1_0.created_at,ph1_0.encrypted_password,ph1_0.version from password_history ph1_0 where ph1_0.credential_id=?
+Hibernate: select ph1_0.credential_id,ph1_0.id,ph1_0.created_at,ph1_0.encrypted_password,ph1_0.version from password_history ph1_0 where ph1_0.credential_id=?
+Hibernate: select ph1_0.credential_id,ph1_0.id,ph1_0.created_at,ph1_0.encrypted_password,ph1_0.version from password_history ph1_0 where ph1_0.credential_id=?

@@ -1,12 +1,13 @@
 package com.securevault.common.exception;
 
 import com.securevault.common.response.ApiResponse;
+import com.securevault.config.CorrelationIdFilter;
 import jakarta.validation.ConstraintViolationException;
 import java.util.List;
-import java.util.UUID;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -29,6 +30,10 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException ex) {
+        // WARN, not ERROR (P4.7/M-47) — a business exception is expected control flow (a 404, a
+        // 409, a 403), not a bug; the message never contains a password/token/decrypted value
+        // (every BusinessException subclass is responsible for that itself).
+        log.warn("{}: {}", ex.getErrorCode(), ex.getMessage());
         return ResponseEntity.status(ex.getHttpStatus())
                 .body(ApiResponse.error(ex.getMessage(), ex.getErrorCode().name(), null));
     }
@@ -140,7 +145,10 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleUnexpected(Exception ex) {
-        String correlationId = UUID.randomUUID().toString();
+        // The same id already on every log line for this request (CorrelationIdFilter put it in
+        // the MDC before this request reached a controller) — not a fresh UUID minted just for
+        // the 500 case, so a client-reported reference id actually matches the surrounding logs.
+        String correlationId = MDC.get(CorrelationIdFilter.MDC_KEY);
         log.error("Unhandled exception [{}]", correlationId, ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(

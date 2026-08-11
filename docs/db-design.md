@@ -56,12 +56,49 @@ the only index this table needs — every login and duplicate-check query goes t
 
 ---
 
-## Tables documented now, migrated later
+## `audit_logs` — implemented in V3 (S4.1)
 
-### `password_history` (Phase 4, S4.2)
-`id` BIGSERIAL PK · `credential_id` BIGINT FK → `credentials(id)` ON DELETE CASCADE ·
-`encrypted_password` TEXT NOT NULL · `version` INT NOT NULL · `created_at` TIMESTAMPTZ NOT NULL.
-Unique `(credential_id, version)`. Rows are immutable — never UPDATEd, only INSERTed.
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PRIMARY KEY | |
+| action | VARCHAR(30) | NOT NULL | `AuditAction` enum, `EnumType.STRING` (ADR-011's precedent) |
+| entity_type | VARCHAR(50) | NOT NULL | e.g. `"CREDENTIAL"` |
+| entity_id | BIGINT | NOT NULL | plain id, not a FK — see below |
+| performed_by | BIGINT | NOT NULL | plain id, not a FK — see below |
+| timestamp | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
+| ip_address | VARCHAR(45) | nullable | fits IPv6; null when there's no bound HTTP request (e.g. `DevDataSeeder` at startup, S4.5) |
+| user_agent | VARCHAR(255) | nullable | same nullability reasoning |
+| details | TEXT | nullable | field names / change summary only — never a password, token, or decrypted value (ADR-017, ADR-022) |
+
+**Deliberately no FK** on `entity_id`/`performed_by`, a change from what this section originally
+planned in S0.3 (a `performed_by → users(id)` FK) — an audit row must survive permanent deletion
+of the entity or user it describes (P4.3's explicit requirement), and no FK means it structurally
+cannot be cascade-deleted or blocked by a constraint either way. Full reasoning: ADR-017.
+**No delete path ever targets this table** — verified live, not just by inspection: permanent
+credential delete leaves `audit_logs` row counts unchanged (`docs/evidence/milestone-2/s4-1-*`).
+**Indexes:** `(entity_type, entity_id)` and `performed_by` — both single-column, anticipating a
+future audit-browsing endpoint filtering by either.
+
+## `password_history` — implemented in V4 (S4.2)
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PRIMARY KEY | |
+| credential_id | BIGINT | NOT NULL, FK → `credentials(id)` | **no `ON DELETE CASCADE`** — see below |
+| encrypted_password | TEXT | NOT NULL | same `base64(iv):base64(ciphertext)` format as `credentials.encrypted_password` (D-05) — the current ciphertext is copied here as-is on a password change, never re-encrypted |
+| version | INT | NOT NULL | starts at 1, increments per password change; immutable once written |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |
+
+**Unique `(credential_id, version)`.** Rows are immutable — never UPDATEd, only INSERTed.
+**Deliberately no `ON DELETE CASCADE`**, a change from what this section originally planned in
+S0.3 — S4.3's permanent-delete endpoint must delete history explicitly, in application code,
+*before* deleting the credential (P4.3's exact sequencing requirement); a plain FK means the
+database itself would reject deleting a credential that still has history rows, catching an
+ordering mistake instead of silently cascading regardless of order. Full reasoning: ADR-019.
+**Index:** `credential_id`, since every real query here (reuse-check top-5, version listing,
+permanent-delete cleanup) filters by it.
+
+## Tables documented now, migrated later
 
 ### `credential_shares` (Phase 5, S5.1)
 `id` BIGSERIAL PK · `credential_id` BIGINT FK → `credentials(id)` ·
@@ -70,13 +107,6 @@ Unique `(credential_id, version)`. Rows are immutable — never UPDATEd, only IN
 `expires_at` TIMESTAMPTZ nullable · `active` BOOLEAN NOT NULL DEFAULT true.
 Unique `(credential_id, shared_with_user_id)` filtered `WHERE active` — enforces "no duplicate
 active share" without blocking re-sharing after a revoke.
-
-### `audit_logs` (Phase 4, S4.1)
-`id` BIGSERIAL PK · `action` VARCHAR(50) NOT NULL · `entity_type` VARCHAR(50) NOT NULL ·
-`entity_id` BIGINT nullable · `performed_by` BIGINT FK → `users(id)` nullable (nullable so a
-failed pre-auth action, e.g. a failed login, can still be logged) · `timestamp` TIMESTAMPTZ
-NOT NULL · `ip_address` VARCHAR(45) (fits IPv6) · `user_agent` VARCHAR(255) · `details` TEXT.
-**No delete path ever targets this table** — not even permanent credential delete (M-38).
 
 ### `login_attempts` (Phase 5, S5.5)
 `id` BIGSERIAL PK · `email` VARCHAR(150) NOT NULL (kept even if no matching user, to detect

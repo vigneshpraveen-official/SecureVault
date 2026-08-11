@@ -1,0 +1,10 @@
+ credentials_before 
+--------------------
+                 68
+(1 row)
+
+ audit_logs_before 
+-------------------
+                66
+(1 row)
+

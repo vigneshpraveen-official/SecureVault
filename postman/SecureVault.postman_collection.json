@@ -407,6 +407,279 @@
       ]
     },
     {
+      "name": "Password",
+      "item": [
+        {
+          "name": "POST /api/password/strength - weak (dictionary)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/password/strength",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "password",
+                "strength"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"password\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/password/strength",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "password",
+                    "strength"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"password\": \"password\"\n}"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Password analyzed\",\"data\":{\"score\":0,\"strength\":\"Very Weak\",\"entropyBits\":22.0,\"feedback\":[\"Increase length to 12+ characters\",\"Add an uppercase letter\",\"Add a number\",\"Add a special character\",\"This is one of the most commonly used passwords \u2014 choose something unique\"]},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "POST /api/password/strength - Welcome123 (mentor worked example)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/password/strength",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "password",
+                "strength"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"Welcome123\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/password/strength",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "password",
+                    "strength"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"password\": \"Welcome123\"\n}"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Password analyzed\",\"data\":{\"score\":3,\"strength\":\"Medium\",\"entropyBits\":31.2,\"feedback\":[\"Increase length to 12+ characters\",\"Add a special character\"]},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "POST /api/password/generate - full config",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/password/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "password",
+                "generate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"length\": 16,\n  \"includeUppercase\": true,\n  \"includeLowercase\": true,\n  \"includeNumbers\": true,\n  \"includeSymbols\": true,\n  \"excludeAmbiguous\": false\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/password/generate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "password",
+                    "generate"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"length\": 16,\n  \"includeUppercase\": true,\n  \"includeLowercase\": true,\n  \"includeNumbers\": true,\n  \"includeSymbols\": true,\n  \"excludeAmbiguous\": false\n}"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Password generated\",\"data\":{\"password\":\";4[aHO2e(3.)42ZA\",\"strength\":{\"score\":5,\"strength\":\"Very Strong\",\"entropyBits\":60.0,\"feedback\":[]}},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "POST /api/password/generate - no class enabled (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/password/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "password",
+                "generate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"length\": 16,\n  \"includeUppercase\": false,\n  \"includeLowercase\": false,\n  \"includeNumbers\": false,\n  \"includeSymbols\": false,\n  \"excludeAmbiguous\": false\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "400 example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/password/generate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "password",
+                    "generate"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"length\": 16,\n  \"includeUppercase\": false,\n  \"includeLowercase\": false,\n  \"includeNumbers\": false,\n  \"includeSymbols\": false,\n  \"excludeAmbiguous\": false\n}"
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"Validation failed\",\"data\":null,\"errorCode\":\"VALIDATION_FAILED\",\"errors\":[{\"field\":\"generateRequest\",\"message\":\"at least one character class must be enabled\"}],\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Vault",
       "item": [
         {
@@ -507,7 +780,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\"success\":true,\"message\":\"Vault retrieved successfully\",\"data\":[{\"id\":1,\"title\":\"GitHub\",\"username\":\"dave.gh\",\"websiteUrl\":\"https://github.com\",\"notes\":\"work account\",\"category\":\"OTHER\",\"favorite\":false,\"createdAt\":\"2026-08-10T19:38:02.802780Z\",\"updatedAt\":\"2026-08-10T19:38:02.802794Z\"},{\"id\":2,\"title\":\"Netflix\",\"username\":\"dave.n\",\"websiteUrl\":\"https://netflix.com\",\"notes\":\"\",\"category\":\"OTHER\",\"favorite\":false,\"createdAt\":\"2026-08-10T19:38:02.836616Z\",\"updatedAt\":\"2026-08-10T19:38:02.836631Z\"}],\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-10T19:38:15.603532659Z\"}"
+              "body": "{\"success\":true,\"message\":\"Vault retrieved successfully\",\"data\":{\"content\":[{\"id\":7,\"title\":\"GitHub\",\"username\":\"frank\",\"websiteUrl\":\"https://github.com\",\"notes\":null,\"category\":\"DEVELOPMENT\",\"favorite\":false,\"strengthScore\":5,\"historyCount\":1,\"createdAt\":\"2026-08-11T00:00:00Z\",\"updatedAt\":\"2026-08-11T00:00:00Z\"}],\"currentPage\":0,\"pageSize\":20,\"totalElements\":1,\"totalPages\":1,\"first\":true,\"last\":true,\"hasNext\":false},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
             }
           ]
         },
@@ -1571,6 +1844,810 @@
               ],
               "cookie": [],
               "body": "{\"success\":false,\"message\":\"You do not have access to this credential\",\"data\":null,\"errorCode\":\"ACCESS_DENIED\",\"errors\":null,\"timestamp\":\"2026-08-10T19:47:25.260650454Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault - paginated, sorted, filtered",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault?page=0&size=5&sortBy=strengthScore&direction=desc&category=WORK&title=Seed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "5"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "strengthScore"
+                },
+                {
+                  "key": "direction",
+                  "value": "desc"
+                },
+                {
+                  "key": "category",
+                  "value": "WORK"
+                },
+                {
+                  "key": "title",
+                  "value": "Seed"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault?page=0&size=5&sortBy=strengthScore&direction=desc&category=WORK&title=Seed",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "0"
+                    },
+                    {
+                      "key": "size",
+                      "value": "5"
+                    },
+                    {
+                      "key": "sortBy",
+                      "value": "strengthScore"
+                    },
+                    {
+                      "key": "direction",
+                      "value": "desc"
+                    },
+                    {
+                      "key": "category",
+                      "value": "WORK"
+                    },
+                    {
+                      "key": "title",
+                      "value": "Seed"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Vault retrieved successfully\",\"data\":{\"content\":[{\"id\":24,\"title\":\"Seed Site 2\",\"username\":\"seeduser2\",\"websiteUrl\":\"https://example2.test\",\"notes\":\"Seeded for S4.5 pagination/sorting/filtering testing\",\"category\":\"WORK\",\"favorite\":false,\"strengthScore\":5,\"historyCount\":0,\"createdAt\":\"2026-08-11T00:00:00Z\",\"updatedAt\":\"2026-08-11T00:00:00Z\"}],\"currentPage\":0,\"pageSize\":5,\"totalElements\":7,\"totalPages\":2,\"first\":true,\"last\":false,\"hasNext\":true},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault - invalid sortBy (400)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault?sortBy=passwordHash",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault"
+              ],
+              "query": [
+                {
+                  "key": "sortBy",
+                  "value": "passwordHash"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "400 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault?sortBy=passwordHash",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault"
+                  ],
+                  "query": [
+                    {
+                      "key": "sortBy",
+                      "value": "passwordHash"
+                    }
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"Validation failed\",\"data\":null,\"errorCode\":\"VALIDATION_FAILED\",\"errors\":[{\"field\":\"list.sortBy\",\"message\":\"must be one of: title, username, websiteUrl, category, favorite, strengthScore, createdAt, updatedAt\"}],\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault - size over cap (400)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault?size=500",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "500"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "400 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault?size=500",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault"
+                  ],
+                  "query": [
+                    {
+                      "key": "size",
+                      "value": "500"
+                    }
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"Validation failed\",\"data\":null,\"errorCode\":\"VALIDATION_FAILED\",\"errors\":[{\"field\":\"list.size\",\"message\":\"must be less than or equal to 100\"}],\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault/{id}/history - version list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{credentialId}}/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{credentialId}}",
+                "history"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{credentialId}}/history",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{credentialId}}",
+                    "history"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Password history retrieved\",\"data\":[{\"version\":1,\"createdAt\":\"2026-08-11T00:00:00Z\"},{\"version\":2,\"createdAt\":\"2026-08-11T00:05:00Z\"}],\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "PUT /api/vault/{id} - password reuse (409)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{credentialId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{credentialId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"SamePasswordAsLastTime!1\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "409 example",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{credentialId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{credentialId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"password\": \"SamePasswordAsLastTime!1\"\n}"
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"This password was used recently for this credential \u2014 choose a different one\",\"data\":null,\"errorCode\":\"PASSWORD_REUSED\",\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/vault/{id} - soft delete (204)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{credentialId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{credentialId}}"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "204 example",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{credentialId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{credentialId}}"
+                  ]
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "name": "GET /api/vault/trash - soft-deleted credentials",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/trash",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "trash"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/trash",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "trash"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Trash retrieved\",\"data\":[{\"id\":7,\"title\":\"GitHub\",\"username\":\"frank\",\"websiteUrl\":\"https://github.com\",\"notes\":null,\"category\":\"DEVELOPMENT\",\"favorite\":false,\"strengthScore\":5,\"historyCount\":1,\"createdAt\":\"2026-08-11T00:00:00Z\",\"updatedAt\":\"2026-08-11T00:00:00Z\"}],\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "PUT /api/vault/{id}/restore - success",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{credentialId}}/restore",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{credentialId}}",
+                "restore"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 example",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{credentialId}}/restore",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{credentialId}}",
+                    "restore"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Credential restored\",\"data\":{\"id\":7,\"title\":\"GitHub\",\"username\":\"frank\",\"websiteUrl\":\"https://github.com\",\"notes\":null,\"category\":\"DEVELOPMENT\",\"favorite\":false,\"strengthScore\":5,\"createdAt\":\"2026-08-11T00:00:00Z\",\"updatedAt\":\"2026-08-11T00:00:00Z\"},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "PUT /api/vault/{id}/restore - already active (no-op, 200)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{credentialId}}/restore",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{credentialId}}",
+                "restore"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 example (no-op)",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{credentialId}}/restore",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{credentialId}}",
+                    "restore"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Credential restored\",\"data\":{\"id\":7,\"title\":\"GitHub\",\"username\":\"frank\",\"websiteUrl\":\"https://github.com\",\"notes\":null,\"category\":\"DEVELOPMENT\",\"favorite\":false,\"strengthScore\":5,\"createdAt\":\"2026-08-11T00:00:00Z\",\"updatedAt\":\"2026-08-11T00:00:00Z\"},\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/vault/{id}/permanent - hard delete + history",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{credentialId}}/permanent",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{credentialId}}",
+                "permanent"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "204 example",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{credentialId}}/permanent",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{credentialId}}",
+                    "permanent"
+                  ]
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/vault/{id}/permanent - not in trash (404)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/{{credentialId}}/permanent",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "{{credentialId}}",
+                "permanent"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "404 example",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/{{credentialId}}/permanent",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "{{credentialId}}",
+                    "permanent"
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":false,\"message\":\"Credential not found: 7\",\"data\":null,\"errorCode\":\"CREDENTIAL_NOT_FOUND\",\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
+            }
+          ]
+        },
+        {
+          "name": "POST /api/vault/recompute-strength - started (202)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vault/recompute-strength",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vault",
+                "recompute-strength"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "202 example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{accessToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/vault/recompute-strength",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "vault",
+                    "recompute-strength"
+                  ]
+                }
+              },
+              "status": "Accepted",
+              "code": 202,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"success\":true,\"message\":\"Password strength recomputation started\",\"data\":null,\"errorCode\":null,\"errors\":null,\"timestamp\":\"2026-08-11T00:00:00Z\"}"
             }
           ]
         }

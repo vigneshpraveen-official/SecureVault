@@ -1,19 +1,19 @@
 # SecureVault — Progress Log
 
 ## CURRENT STATE
-- Phase: 3 — Password intelligence (**complete**)
-- Last session: S3.3 (strength integration into the vault)
-- Build: green | Tests: 13 passing (`AesEncryptionServiceTest`, `PasswordStrengthServiceImplTest`, `PasswordGeneratorServiceImplTest`) | Migrations applied: V0, V1, V2 (`password_changed_at`)
+- Phase: 4 — Data integrity, performance, operations (**complete**) — **Milestone 2 complete** (Phases 2-4)
+- Last session: S4.8 (Milestone 2 evidence pack)
+- Build: green | Tests: 13 passing (unchanged this phase — Phase 4 verification is entirely live curl/psql/log evidence, same pattern as every prior phase; JUnit+Testcontainers integration tests arrive in Phase 7, D-16) | Migrations applied: V0, V1, V2, V3 (`audit_logs`), V4 (`password_history`)
 - Working branch: main (personal fork repo only; no central-repo remote configured yet — see ADR-006)
-- Next session: S4.1 — Transactions + AuditLog with rollback proof (M-31, M-32)
-- Open blockers: ERD PNG export is a manual dbdiagram.io step, not yet done by the developer (DBML source is committed)
-- Commit cadence: **one commit per phase**, not per session (ADR-008, developer's explicit preference from Phase 1 on) — Phase 3's three sessions land in a single commit
-- Full phase/milestone tracker: `docs/roadmap.md` (16/53 sessions done, Milestone 1 complete, Phase 2 complete, **Phase 3 complete**)
+- Next session: S5.1 — Credential sharing and permissions (M-42..M-45)
+- Open blockers: ERD PNG export is a manual dbdiagram.io step, not yet done by the developer (DBML source is committed). S9.1 (central-repo push) remains blocked pending mentor push/branch instructions (ADR-006) — P4.8's "prepare the central-repo push using P9.1" step is deferred until that instruction arrives, same as every prior phase.
+- Commit cadence: **one commit per phase**, not per session (ADR-008, developer's explicit preference from Phase 1 on) — Phase 4's eight sessions land in a single commit
+- Full phase/milestone tracker: `docs/roadmap.md` (24/53 sessions done, Milestone 1 complete, Phase 2 complete, Phase 3 complete, **Phase 4 complete, Milestone 2 complete**)
 
 ## NEXT UP
-1. S4.1 — Transactions + AuditLog with rollback proof (M-31, M-32)
-2. S4.2 — Password history + reuse prevention (M-35, M-36)
-3. S4.3 — Soft delete, restore, trash, permanent delete (M-37, M-38, M-39)
+1. S5.1 — Credential sharing and permissions (M-42..M-45)
+2. S5.2 — Refresh tokens, logout, Redis denylist
+3. S5.3 — Redis caching + invalidation
 
 ---
 ## SESSION LOG
@@ -309,3 +309,115 @@ visible at a glance across daily/ad-hoc sessions and across AI tools.
 **Verified, live, against real data (`docs/evidence/milestone-2/s3-9-*` .. `s3-18-*`):** created 3 credentials for one user — one dictionary-weak (`strengthScore: 0`), two sharing an identical strong password (`strengthScore: 5` each) — health showed `total=3, veryWeak=1, veryStrong=2, reused=2, healthScore=63` (hand-verified against the formula: 3.33-avg-score → 40.0 + (1-⅔)×25=8.33 + 15 = 63.33 → 63). Updated the weak credential's password to a strong one: `strengthScore` jumped 0→5, health recomputed to `veryStrong=3, healthScore=83` (60+8.33+15=83.33→83, matches exactly). A follow-up title-only update left `strengthScore` at 5, confirming it doesn't reset on unrelated edits. Backdated one credential's `password_changed_at` 100 days via direct SQL → `staleCredentialCount` became 1, `healthScore` recomputed to 78 (60+8.33+10=78.33→78, matches exactly). A zero-credential user's health returned `total=0, healthScore=100`, confirming per-user isolation and the empty-vault special case.
 **Blockers:** none. **Phase 3 is complete.**
 **Commit:** _batched — see Phase 3 close, ADR-008._
+
+### S4.1 — 2026-08-11 — Transactions + AuditLog with rollback proof
+**Mentor tasks:** M-31, M-32
+**Done:**
+- `common/audit/AuditLog` (new `V3__audit_logs.sql`): `action` (`AuditAction` enum, STRING), `entityType`, `entityId`, `performedBy`, `timestamp`, `ipAddress`, `userAgent`, `details`. No setters (immutable by construction) and **deliberately no FK** to `users`/`credentials` — an audit row must survive permanent deletion of the entity it describes (a requirement that only becomes concrete in S4.3, decided ahead of time here).
+- `AuditService.record(...)` called synchronously from `CredentialServiceImpl`'s `create`/`update`/`delete`, inside the same `@Transactional` boundary — not an AOP aspect, because the mentor's actual requirement (audit failure rolls back the business write) only holds if both share one transaction. Full tradeoff reasoning: ADR-017.
+- Rollback proof: a test-only `app.testing.force-audit-failure` flag (`@Value`, default `false`) in `AuditServiceImpl` that throws before persisting. Verified live: flag on → `POST /api/vault` returns 500, `credentials`/`audit_logs` row counts unchanged, no `RollbackProofTest` row exists; flag off → identical request succeeds, both tables gain exactly one row with matching ids.
+**Files:** `common/audit/AuditAction.java`, `AuditLog.java`, `AuditLogRepository.java`, `AuditService.java`, `AuditServiceImpl.java` (all new), `db/migration/V3__audit_logs.sql` (new), `vault/CredentialServiceImpl.java`, `docs/decisions.md` (ADR-017), `docs/db-design.md`.
+**Decisions:** ADR-017 (synchronous audit writes over AOP; no-FK `AuditLog` design; test-only rollback-proof flag).
+**Verified:** `docs/evidence/milestone-2/s4-1-rollback-*` — before/attempt/after DB row counts, all three states captured against the real running app and Postgres.
+**Blockers:** none.
+**Commit:** _batched — see Phase 4 close, ADR-008._
+
+### S4.2 — 2026-08-11 — Password history + reuse prevention
+**Mentor tasks:** M-35, M-36
+**Done:**
+- `vault/PasswordHistory` (new `V4__password_history.sql`): unidirectional `@ManyToOne` to `Credential` only (no back-reference — see S4.4), immutable (no setters), unique `(credential_id, version)`. Deliberately **no `ON DELETE CASCADE`** — S4.3's permanent-delete must remove history explicitly, in order, before the credential; a plain FK makes the database itself enforce that ordering.
+- Reuse check: `findTop5ByCredentialIdOrderByVersionDesc` (window capped at the query level, not in Java) runs before any mutation inside `update(...)`; a match throws `PasswordReusedException` (409, `PASSWORD_REUSED` — already in the fixed `ErrorCode` enum since Phase 2), rolling back any title/username/etc changes already applied in the same call.
+- On a genuine password change: the credential's *current* ciphertext is copied into history as-is (no re-encryption — it's already correctly AES-GCM'd), version = last + 1 (or 1), then the new password is encrypted and set — all in the same transaction as the existing update() logic.
+- `GET /api/vault/{id}/history` returns version + timestamp only, via a JPQL constructor-expression query that never selects `encrypted_password` into memory at all for that request — a stronger guarantee than a DTO that merely omits the field. Full reasoning: ADR-019.
+**Files:** `vault/PasswordHistory.java`, `PasswordHistoryRepository.java`, `dto/PasswordHistoryVersionResponse.java` (all new), `db/migration/V4__password_history.sql` (new), `common/exception/PasswordReusedException.java` (new), `vault/CredentialService.java`, `CredentialServiceImpl.java`, `CredentialController.java`, `docs/decisions.md` (ADR-019), `docs/db-design.md`.
+**Decisions:** ADR-019 (5-entry reuse window enforced at the query level; ciphertext reuse over re-encryption; history endpoint's stronger never-fetches-the-column hardening).
+**Verified:** live sequence — 3 sequential password changes on one credential produced version rows 1, 2, 3; a title-only update created no history row; reusing the immediately-previous password → 409; reusing a 6th-oldest password (outside the 5-window) → allowed. `docs/evidence/milestone-2/s3-13-*` onward plus dedicated Phase 4 curl runs.
+**Blockers:** none.
+**Commit:** _batched — see Phase 4 close, ADR-008._
+
+### S4.3 — 2026-08-11 — Soft delete, restore, trash, permanent delete
+**Mentor tasks:** M-37, M-38, M-39
+**Done:**
+- `DELETE /api/vault/{id}` now sets `deleted=true`, `deletedAt=now()` instead of removing the row — still 204/no body (the established RFC 9110 §15.3.5 exemption).
+- `PUT /api/vault/{id}/restore` — **no-op (200, unchanged state), not 409**, when called on an already-active credential: master §9's fixed `ErrorCode` enum has no code that fits "already active," and restore is naturally idempotent anyway. Full reasoning: ADR-018.
+- `GET /api/vault/trash` — only the caller's soft-deleted credentials.
+- `DELETE /api/vault/{id}/permanent` — hard-deletes the credential AND its password history in one transaction (history first, matching the FK ordering `ON DELETE CASCADE` was deliberately not used for in S4.2); only operates on an already-trashed credential (404 otherwise, same "no locked error code fits" reasoning as restore); audit logs are untouched by construction (no FK, ADR-017).
+- Every "active" repository query renamed explicitly (`findByUserIdAndDeletedFalse`, `findByIdAndDeletedFalse`, `search(...)` with `AND c.deleted = false` in its JPQL) rather than a blanket `@Where`/`@SQLRestriction` on the entity — chosen specifically because trash/restore/permanent-delete need to see deleted rows, and a class-level filter would apply invisibly to them too. Full reasoning and the rejected alternative: ADR-018.
+- Sharing interaction (point 7 of the prompt) is N/A — no sharing feature exists yet (Phase 5).
+**Files:** `vault/CredentialRepository.java`, `CredentialService.java`, `CredentialServiceImpl.java`, `CredentialController.java`, `docs/decisions.md` (ADR-018), `docs/api-contract.md`.
+**Decisions:** ADR-018 (explicit `*DeletedFalse` query naming over `@SQLRestriction`; no-op restore over a new error code).
+**Verified:** full sequence live — create → soft delete → absent from list/search/filter/get-by-id (404) → present in trash → restore → present again, `strengthScore` unchanged → permanent delete → gone, history gone, audit logs still present and unchanged in count.
+**Blockers:** none.
+**Commit:** _batched — see Phase 4 close, ADR-008._
+
+### S4.4 — 2026-08-11 — N+1 elimination and fetch strategy
+**Mentor task:** M-33
+**Done:**
+- Reviewed every entity relationship: `Credential.user` (LAZY), `PasswordHistory.credential` (LAZY), `Credential` → `PasswordHistory` (**no mapping at all**, deliberately — the safest fetch strategy for a collection that would tempt exactly this session's N+1 bug is to not model it as a navigable relationship), `AuditLog` (no relationship, ADR-017). No `EAGER` anywhere.
+- Added `historyCount` to `CredentialSummaryResponse` (number of password versions per credential) — a genuinely useful vault-list signal that also happens to be the "vault list touching related data" N+1 shape M-33 asks to find and fix.
+- **Before:** temporarily added a `@OneToMany` back-reference + naive `credential.getPasswordHistories().size()` per row. First finding: with this project's `open-in-view: false` (locked since S0.1), the naive version doesn't just N+1 — it throws `LazyInitializationException` outright unless the read method is wrapped in `@Transactional`, which is itself a real cost. Wrapped temporarily to get a comparable count: **6 queries for 5 credentials** (1 list query + 5 per-row history queries).
+- **After:** one batched `SELECT credential_id, COUNT(*) ... GROUP BY credential_id` aggregate query (`PasswordHistoryRepository.countByCredentialIds`), merged into the list results in `CredentialServiceImpl`. **2 queries, flat regardless of page size.** Temporary back-reference and `@Transactional` removed immediately after capturing the numbers — the shipped `Credential` entity still has no back-reference.
+- Chose the aggregate-query technique over `JOIN FETCH`/`@EntityGraph` specifically because only a *count* was needed, not the history rows themselves; either of those would have pulled full entities into memory just to call `.size()`.
+**Files:** `vault/dto/CredentialSummaryResponse.java`, `PasswordHistoryRepository.java`, `CredentialServiceImpl.java`, `docs/evidence/milestone-2/n-plus-one.md` (new, full before/after + relationship-mapping table).
+**Decisions:** none new — full reasoning lives in `n-plus-one.md` per the prompt's own deliverable list, not a separate ADR.
+**Verified:** `docs/evidence/milestone-2/n-plus-one.md`, `s4-4-nplusone-before-queries.txt`, `s4-4-nplusone-after-queries.txt`, `s4-4-lazyinit-exception.txt` — all captured against the real running app with `show-sql` (already local-only since S0.1).
+**Blockers:** none.
+**Commit:** _batched — see Phase 4 close, ADR-008._
+
+### S4.5 — 2026-08-11 — Pagination, sorting, dynamic filtering
+**Mentor task:** M-34
+**Done:**
+- `GET /api/vault` rewritten: `page`/`size`/`sortBy`/`direction`/`category`/`title`/`username`/`website`, all optional and freely combinable. `size` capped at 100 (`@Max`), `sortBy` whitelisted against real `Credential` fields via `@Pattern` (an unvalidated sort field is a 500 waiting to happen and a schema leak) — both via Bean Validation on `@RequestParam`s (`@Validated` added to `CredentialController`), reusing the existing `ConstraintViolationException` → 400 pipeline from Phase 2.
+- `CredentialSpecifications` (static `Specification<Credential>` builders) composed via plain `if (filter != null) spec = spec.and(...)` chaining in `CredentialServiceImpl` — never string-built. Owner + `deleted=false` always ANDed first.
+- `PagedResponse<T>` (unused since ADR-013/P2.3) finally consumed — fields renamed `page`/`size` → `currentPage`/`pageSize`, `+hasNext` added, to match the mentor's literal spec wording exactly (safe rename, confirmed unconsumed until this session).
+- `DevDataSeeder` (`config/`, `@Profile("local")`, `CommandLineRunner`) seeds a fixed test user (`seed.user@securevault.local`) with 50 credentials across all 7 categories, idempotent (skips if already at target count), goes through `UserService`/`CredentialService` — the same code path a real request uses, not a direct repository save — so seeded rows get real hashing/encryption/strength scoring. **Found and fixed live:** the seeder crashed at startup with `IllegalStateException: No thread-bound request found`, because `AuditServiceImpl` constructor-injected `HttpServletRequest` (a request-scoped proxy) and the seeder runs outside any HTTP request. Fixed by looking up the request via `RequestContextHolder` per call, returning `null` ip/userAgent when none exists instead of crashing — see ADR-020.
+**Files:** `vault/CredentialSpecifications.java` (new), `CredentialRepository.java` (+`JpaSpecificationExecutor`), `CredentialService.java`, `CredentialServiceImpl.java`, `CredentialController.java`, `common/response/PagedResponse.java`, `common/audit/AuditServiceImpl.java` (request-lookup fix), `config/DevDataSeeder.java` (new), `docs/decisions.md` (ADR-021), `docs/api-contract.md`.
+**Decisions:** ADR-021 (Specification-based dynamic filtering; `PagedResponse` field finalization).
+**Verified, live, against the 50-row seed:** pagination metadata (`currentPage`/`pageSize`/`totalElements`/`totalPages`/`first`/`last`/`hasNext`) correct at `page=1&size=10`; sort asc/desc by title both correct; category filter alone (7 BANKING rows); title filter alone (11 matches); combined category+title+sort+page query; invalid `sortBy` → 400 with the exact allowed-field list; `size=500` → 400 (capped at 100); page 99 → empty content, correct totals, not an error; a second, non-seed user's list never showed the seed user's 50 rows (cross-user isolation). `docs/evidence/milestone-2/s4-5-*`.
+**Blockers:** none.
+**Commit:** _batched — see Phase 4 close, ADR-008._
+
+### S4.6 — 2026-08-11 — Async thread pool and background tasks
+**Mentor tasks:** M-40, M-41
+**Done:**
+- `config/AsyncConfig`: `@EnableAsync` + `ThreadPoolTaskExecutor` bean `"taskExecutor"` — corePoolSize 4, maxPoolSize 8, queueCapacity 50, `CallerRunsPolicy`, thread names prefixed `sv-async-`, every value deliberately chosen and justified in the class javadoc (not defaults).
+- `common/async/AsyncTaskService`: `sendNotificationEmail` (simulated — logs only, real SMTP is S5.6) wired into `UserServiceImpl.register(...)`; `logActivity` wired into `AuthController.login(...)` on success. Both `@Async("taskExecutor")`.
+- `CredentialService.recomputeStrengthForUser` (resolves the `TODO(S4.6)` left in `create`/`update` since S3.3) — `@Async("taskExecutor")` + its own `@Transactional`, triggered by new `POST /api/vault/recompute-strength` (202 Accepted). **Deliberately NOT** applied to the single create/update path — moving strength computation off-thread there would mean the create/update response no longer reflects the just-computed `strengthScore`, a real regression; the bulk endpoint is the version that actually benefits from running off-thread.
+- Critical boundary, documented and enforced: `AuditService.record(...)` stays synchronous — `@Async` runs in a different transaction, so an async audit write could never roll back with its business operation. Every async method takes `userId` as an explicit parameter (`SecurityContextHolder` is empty on the worker thread).
+- Demonstrated pool reuse: 20 concurrent `POST /api/vault/recompute-strength` calls (plus the 2 from register/login) all landed on exactly 4 distinct `sv-async-N` thread names — proving reuse, not thread-per-task.
+**Files:** `config/AsyncConfig.java` (new), `common/async/AsyncTaskService.java`, `AsyncTaskServiceImpl.java` (new), `common/util/LogMasking.java` (new), `user/UserServiceImpl.java`, `security/AuthController.java`, `vault/CredentialService.java`, `CredentialServiceImpl.java`, `CredentialController.java`, `docs/decisions.md` (ADR-020).
+**Decisions:** ADR-020 (pool sizing; AuditService stays synchronous; explicit userId across the async boundary; the HttpServletRequest injection fix that fell out of this session's design).
+**Verified:** `docs/evidence/milestone-2/s4-6-*` — masked welcome-email log line, login-activity log line (both on `sv-async-` threads, distinct from the `http-nio-8080-exec-` request thread), and the 20-concurrent-request thread-name histogram (4 distinct names, ~20 lines each).
+**Blockers:** none.
+**Commit:** _batched — see Phase 4 close, ADR-008._
+
+### S4.7 — 2026-08-11 — Production logging
+**Mentor tasks:** M-46, M-47
+**Done:**
+- `System.out`/`printStackTrace` grep: **0 before, 0 after** — genuinely already clean (consistent with every prior phase's finding), reported honestly rather than fabricating a nonzero "before."
+- `@Slf4j` logging added across user registration, login success/failure (masked email), credential create/read/update/delete/restore/permanent-delete, and `GlobalExceptionHandler`'s `BusinessException` handler — DEBUG for a single credential read (high-frequency, not a state change), INFO for every state-changing event, WARN for business exceptions and failed logins, ERROR only for the unexpected catch-all.
+- `common/util/LogMasking.maskEmail` (`u***@domain.com`) reused by both the async welcome-email log and the failed-login WARN.
+- `config/CorrelationIdFilter` (`Ordered.HIGHEST_PRECEDENCE`, ahead of `JwtAuthenticationFilter`) puts one UUID per request into the SLF4J MDC — honors an incoming `X-Correlation-Id` — and echoes it in the response header; `GlobalExceptionHandler`'s catch-all now reads that same MDC value for its "Reference:" message instead of minting a fresh UUID (S2.3's original behavior).
+- **Found and fixed live while capturing evidence:** an async task's log lines showed `[-]` instead of the request's correlation id — MDC is `ThreadLocal` and doesn't propagate to `@Async`'s worker threads automatically. Fixed with `MdcTaskDecorator`, wired into `AsyncConfig`'s executor; re-verified the same login's activity-log line on the `sv-async-` thread now carries the identical correlation id as the request-thread line.
+- `logback-spring.xml`: console + `RollingFileAppender` (`SizeAndTimeBasedRollingPolicy`, 10MB-or-daily, 7-day history, 200MB total cap), per-profile levels (`DEBUG` `com.securevault` locally, `INFO` in prod) — `logging.level` removed from `application-local.yml` in favor of this single source of truth. `logs/` already gitignored since S0.1.
+- Grepped the actual log file for every known test password/secret string used across this session's evidence-gathering — **0 matches**.
+**Files:** `config/CorrelationIdFilter.java`, `MdcTaskDecorator.java`, `AsyncConfig.java` (decorator wiring) (all new/updated), `common/exception/GlobalExceptionHandler.java`, `common/util/LogMasking.java`, `user/UserServiceImpl.java`, `security/AuthController.java`, `vault/CredentialServiceImpl.java`, `backend/src/main/resources/logback-spring.xml` (new), `application-local.yml`, `docs/decisions.md` (ADR-022).
+**Decisions:** ADR-022 (full never-logged list; correlation-id design; rotation policy).
+**Verified:** `docs/evidence/milestone-2/s4-7-*` — correlation id echoed on both a caller-supplied and server-generated header, present in the log file for the request thread, present (post-fix) on the async thread too, and the clean secret-pattern grep result.
+**Blockers:** none.
+**Commit:** _batched — see Phase 4 close, ADR-008._
+
+### S4.8 — 2026-08-11 — Milestone 2 evidence pack
+**Mentor task:** none numbered — evidence/consolidation session, no new features.
+**Done:**
+- Ran a P-AUDIT-style sweep across the whole backend: no controller references an entity or returns an unwrapped endpoint; every `@ManyToOne` is `LAZY` (the one `@ManyToOne` grep hit was a doc-comment, not code); the four services without `@Transactional` (`AsyncTaskServiceImpl`, `AuditServiceImpl`, `PasswordGeneratorServiceImpl`, `PasswordStrengthServiceImpl`) reviewed and confirmed correctly exempt — `AuditServiceImpl` participates in its caller's ambient transaction by thread-bound context, not its own annotation; the other three touch no database at all. No new HIGH/MEDIUM findings beyond the ones already found and fixed live during S4.4-S4.7 (documented in their own session entries).
+- Postman collection: added a `Password` folder (strength/generate — Phase 3 shipped without one), fixed `GET /api/vault - valid token (200)`'s saved example to the new `PagedResponse` shape (S4.5 changed it), and added 12 new Vault requests covering every Phase 4 endpoint (paginated/filtered list, invalid sortBy, size-cap, history, password-reuse 409, soft delete, trash, restore success + no-op, permanent delete success + 404, bulk recompute).
+- `docs/db-design.md`: `audit_logs` and `password_history` moved from "documented now, migrated later" to "implemented," with the deviations from their original S0.3 plan called out explicitly (no FK on `audit_logs`, no `ON DELETE CASCADE` on `password_history` — both deliberate, both explained).
+- `docs/guide.md`: module map, new "Async model" and "Logging" sections, database schema and API index counts updated.
+- `docs/viva-notes.md` (new) — W-6 explain-back: BCrypt-vs-AES, request lifecycle, JWT filter/statelessness, why DTOs exist, and Phase 4's core design tension (synchronous audit vs. async activity logging).
+- Central-repo push (P9.1) remains explicitly deferred — no mentor push/branch instruction yet (ADR-006), consistent with every prior phase.
+**Files:** `postman/SecureVault.postman_collection.json`, `docs/db-design.md`, `docs/guide.md`, `docs/viva-notes.md` (new), `docs/api-contract.md`.
+**Decisions:** none new.
+**Verified:** `mvn clean verify` green at every step across the whole phase, run again at close. Full live journey re-confirmed end to end across all 8 sessions' evidence in `docs/evidence/milestone-2/`.
+**Blockers:** none. **Phase 4 is complete. Milestone 2 (Phases 2-4) is complete.**
+**Commit:** _batched — see Phase 4 close, ADR-008._

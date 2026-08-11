@@ -1,0 +1,2 @@
+2026-08-11 16:34:08.232 INFO  [http-nio-8080-exec-1] [demo-corr-fixed-456] c.s.security.AuthController - Login succeeded: userId=14
+2026-08-11 16:34:08.240 INFO  [sv-async-1] [demo-corr-fixed-456] c.s.c.async.AsyncTaskServiceImpl - [sv-async-1] Activity: User logged in: userId=14

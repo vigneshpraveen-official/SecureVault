@@ -1,0 +1,6 @@
+
+org.hibernate.LazyInitializationException: failed to lazily initialize a collection of role: com.securevault.vault.Credential.passwordHistories: could not initialize proxy - no Session
+	at org.hibernate.collection.spi.AbstractPersistentCollection.throwLazyInitializationException(AbstractPersistentCollection.java:635) ~[hibernate-core-6.6.53.Final.jar:6.6.53.Final]
+	at org.hibernate.collection.spi.AbstractPersistentCollection.withTemporarySessionIfNeeded(AbstractPersistentCollection.java:219) ~[hibernate-core-6.6.53.Final.jar:6.6.53.Final]
+	at org.hibernate.collection.spi.AbstractPersistentCollection.readSize(AbstractPersistentCollection.java:150) ~[hibernate-core-6.6.53.Final.jar:6.6.53.Final]
+	at org.hibernate.collection.spi.PersistentBag.size(PersistentBag.java:353) ~[hibernate-core-6.6.53.Final.jar:6.6.53.Final]

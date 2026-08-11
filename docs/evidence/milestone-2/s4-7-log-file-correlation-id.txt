@@ -1,0 +1,1 @@
+2026-08-11 16:32:02.645 INFO  [http-nio-8080-exec-4] [demo-corr-abc123] c.s.security.AuthController - Login succeeded: userId=14
