@@ -128,6 +128,8 @@ public class SecurityConfig {
                         auth ->
                                 auth.requestMatchers(
                                                 "/api/auth/**",
+                                                "/api/password/strength",
+                                                "/api/password/generate",
                                                 "/actuator/health",
                                                 "/swagger-ui/**",
                                                 "/v3/api-docs/**")

@@ -1,0 +1,1 @@
+{"success":true,"message":"Password analyzed","data":{"score":0,"strength":"Very Weak","entropyBits":22.0,"feedback":["Increase length to 12+ characters","Add an uppercase letter","Add a number","Add a special character","This is one of the most commonly used passwords — choose something unique"]},"errorCode":null,"errors":null,"timestamp":"2026-08-11T06:06:57.406776513Z"}

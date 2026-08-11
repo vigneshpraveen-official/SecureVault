@@ -1,19 +1,19 @@
 # SecureVault — Progress Log
 
 ## CURRENT STATE
-- Phase: 2 — Production-grade API refactor (**complete**)
-- Last session: S2.4 (sweep + Postman regression)
-- Build: green | Tests: 3 passing (`AesEncryptionServiceTest`) | Migrations applied: V0, V1 (users, credentials) — no schema change this phase
+- Phase: 3 — Password intelligence (**complete**)
+- Last session: S3.3 (strength integration into the vault)
+- Build: green | Tests: 13 passing (`AesEncryptionServiceTest`, `PasswordStrengthServiceImplTest`, `PasswordGeneratorServiceImplTest`) | Migrations applied: V0, V1, V2 (`password_changed_at`)
 - Working branch: main (personal fork repo only; no central-repo remote configured yet — see ADR-006)
-- Next session: S3.1 — Password strength analyzer (M-29)
+- Next session: S4.1 — Transactions + AuditLog with rollback proof (M-31, M-32)
 - Open blockers: ERD PNG export is a manual dbdiagram.io step, not yet done by the developer (DBML source is committed)
-- Commit cadence: **one commit per phase**, not per session (ADR-008, developer's explicit preference from Phase 1 on) — Phase 2's four sessions land in a single commit
-- Full phase/milestone tracker: `docs/roadmap.md` (13/53 sessions done, Milestone 1 complete, **Phase 2 complete**)
+- Commit cadence: **one commit per phase**, not per session (ADR-008, developer's explicit preference from Phase 1 on) — Phase 3's three sessions land in a single commit
+- Full phase/milestone tracker: `docs/roadmap.md` (16/53 sessions done, Milestone 1 complete, Phase 2 complete, **Phase 3 complete**)
 
 ## NEXT UP
-1. S3.1 — Password strength analyzer (M-29)
-2. S3.2 — Generator with `SecureRandom` (M-30)
-3. S3.3 — Entropy + vault integration
+1. S4.1 — Transactions + AuditLog with rollback proof (M-31, M-32)
+2. S4.2 — Password history + reuse prevention (M-35, M-36)
+3. S4.3 — Soft delete, restore, trash, permanent delete (M-37, M-38, M-39)
 
 ---
 ## SESSION LOG
@@ -266,3 +266,46 @@ visible at a glance across daily/ad-hoc sessions and across AI tools.
 **Verified:** `mvn clean verify` green after every change in this phase, run again at phase close. Full curl-based journey re-run end to end (register → validation failure → login → 401s → vault CRUD → search/filter → cross-user 403 → 404 → type-mismatch 400 → missing-param 400 → 500-with-correlation-id) — evidence in `docs/evidence/milestone-2/`.
 **Blockers:** none. **Phase 2 is complete.**
 **Commit:** _batched — see Phase 2 close, ADR-008._
+
+### S3.1 — 2026-08-11 — Password strength analyzer
+**Mentor task:** M-29
+**Done:**
+- `PasswordStrengthService`/`Impl` in the new `password/` package: base score (+1 each for length>12, uppercase, lowercase, digit, special — the mentor's exact baseline formula), then penalties for consecutive repeats (3+ run), sequential patterns (4+ ASCII or keyboard-row run — 4, not 3, specifically so the mentor's own `Welcome123` worked example doesn't false-positive on its `123`), and a whole-password case-insensitive dictionary hit against a hand-curated ~250-entry `classpath:/password/common-passwords.txt` (not a downloaded wordlist, per the prompt).
+- `entropyBits` = true Shannon entropy of the password's own character-frequency distribution, scaled by length — not the common charset-pool shortcut, since the prompt names "Shannon entropy" specifically.
+- `POST /api/password/strength` — public (`permitAll`, like `/api/auth/**`): a strength check is a stateless utility that may run before a JWT exists (e.g. live registration-form feedback), and never touches user/vault data.
+- `docs/password-policy.md` — exact algorithm, every threshold's reasoning, score→label table, worked examples.
+- `PasswordStrengthServiceImplTest` — all 5 of the mentor's named cases plus a determinism check: `"password"` → 0/Very Weak with dictionary+no-variety feedback; `"Welcome123"` → exactly 3/Medium with length+special feedback; a 20-char random mixed password → 5/Very Strong; `"aaaaaaaa1A!"` → repetition-penalized; `"abcd1234"` → sequence-penalized.
+**Files:** `password/PasswordStrengthService.java`, `password/PasswordStrengthServiceImpl.java`, `password/PasswordController.java`, `password/dto/PasswordStrengthRequest.java`, `password/dto/PasswordStrengthResponse.java`, `password/common-passwords.txt` (resource), `config/SecurityConfig.java` (permitAll), `docs/password-policy.md` (new), `docs/decisions.md` (ADR-014), `backend/src/test/.../PasswordStrengthServiceImplTest.java`.
+**Decisions:** ADR-014 (penalty thresholds, whole-string dictionary match, true Shannon entropy — see above).
+**Verified:** `mvn test` green, all 6 test cases pass on first run. Live curl confirms the exact same scores as the unit tests (`docs/evidence/milestone-2/s3-1-*` .. `s3-4-*`), including a 400 on a blank password.
+**Blockers:** none.
+**Commit:** _batched — see Phase 3 close, ADR-008._
+
+### S3.2 — 2026-08-11 — Password generator
+**Mentor task:** M-30
+**Done:**
+- `PasswordGeneratorService`/`Impl` — guarantee-then-fill-then-shuffle algorithm, entirely on one `SecureRandom` instance: (1) one character picked from each *enabled* class's pool first, guaranteeing every requested class appears (the exact bug a naive single-pool random fill cannot avoid, especially at the prompt's own 8-character minimum); (2) remaining slots filled from the union of enabled pools; (3) Fisher-Yates shuffle so the guaranteed characters from step 1 don't always land at the front.
+- `excludeAmbiguous` strips `l`, `I`, `1`, `O`, `0` from whichever pool(s) contain them, before step 1 runs.
+- `GenerateRequest` — `length` (`@Min(8) @Max(128)`), four boxed `Boolean` class flags (`@NotNull` — a security-relevant config should never silently default an omitted flag to false), and a new custom class-level `@AtLeastOneCharacterClass` Bean Validation constraint (a cross-field rule field-level annotations can't express) so a violation returns the same `400 VALIDATION_FAILED` shape as everything else instead of a one-off manual check.
+- `POST /api/password/generate` — public, same reasoning as `/strength`. Reuses `PasswordStrengthService.analyze(...)` for the response's strength field — no duplicate scoring logic.
+- **Gap found and fixed while exercising `GenerateRequest`'s validation live:** class-level constraint violations land in `BindingResult.getGlobalErrors()`, not `getFieldErrors()` — `GlobalExceptionHandler#handleValidation` was only reading field errors, so a "no character class enabled" violation returned `400` with an **empty** `errors[]` and no message at all. Fixed by concatenating field and global errors into one list.
+- `java.util.Random` grep across the whole backend: **zero real usages** (one hit, in this class's own doc-comment explaining the rule — not actual code).
+**Files:** `password/PasswordGeneratorService.java`, `password/PasswordGeneratorServiceImpl.java`, `password/PasswordController.java` (added `/generate`), `password/dto/GenerateRequest.java`, `password/dto/GenerateResponse.java`, `password/dto/AtLeastOneCharacterClass.java` + `AtLeastOneCharacterClassValidator.java`, `common/exception/GlobalExceptionHandler.java` (global-errors fix), `config/SecurityConfig.java` (permitAll), `docs/password-policy.md` (§2), `docs/decisions.md` (ADR-015), `backend/src/test/.../PasswordGeneratorServiceImplTest.java`.
+**Decisions:** ADR-015 (guarantee-then-fill-then-shuffle algorithm and why a naive fill can't guarantee class coverage).
+**Verified:** `mvn test` green — 1000 identical-config generations all distinct; every generated password satisfies its own config (length, classes present); disabling symbols never yields one; `excludeAmbiguous` removes all five characters over 100 generations; single-class-only generates from that class alone. Live curl confirms generation, the length-bound 400, and the (now-fixed) no-class-enabled 400 with a real message (`docs/evidence/milestone-2/s3-5-*` .. `s3-8-*`).
+**Blockers:** none.
+**Commit:** _batched — see Phase 3 close, ADR-008._
+
+### S3.3 — 2026-08-11 — Strength integration into the vault
+**Mentor task:** none numbered — P3.3 continuation of M-29
+**Done:**
+- `V2__add_password_changed_at.sql` — new column, backfilled to `now()` for any existing rows (disclosed limitation: their true original change date isn't recoverable). `strength_score` (already `SMALLINT` since `V1__init.sql`, previously unmapped) is now mapped on `Credential` as `Short` — **not** `Integer`: Hibernate's schema validation rejected an `Integer`-typed field against the existing `SMALLINT` column even with the types otherwise compatible, so the field is `Short` with an explicit `@JdbcTypeCode(SqlTypes.SMALLINT)` pin; `CredentialMapper` converts `Short`↔`Integer` automatically for the DTOs.
+- `CredentialServiceImpl.create(...)` computes and stores `strengthScore` + sets `passwordChangedAt` unconditionally. `update(...)` only touches either field **inside** the existing decrypt-and-compare branch that already isolates "the password actually changed" (S1.4) — renaming a credential or changing its category must not reset either, and live testing confirmed exactly that (title-only update left `strengthScore` untouched).
+- `strengthScore` added to `CredentialResponse` and `CredentialSummaryResponse` (not `CredentialDetailResponse` — not asked for, and the single-reveal endpoint already carries plenty).
+- `GET /api/vault/health` — `VaultHealthResponse` (total, band counts, `reusedPasswordCount`, `staleCredentialCount`, `healthScore` 0-100). Reuse detection decrypts each credential's password, SHA-256 hashes it, groups by hash, and discards everything — plaintext/hashes exist only as loop-local variables, never logged/cached/returned. Staleness compares `passwordChangedAt` against a 90-day threshold. Health formula: 60% average strength + 25% non-reuse + 15% non-staleness, full reasoning in `docs/password-policy.md` §3 and ADR-016.
+- `TODO(S4.6)` comments left at both strength-computation call sites, per the prompt's explicit instruction — bulk recomputation doesn't exist yet, but when it does it must go through the async executor, not the request thread.
+**Files:** `db/migration/V2__add_password_changed_at.sql` (new), `vault/Credential.java`, `vault/CredentialMapper.java`, `vault/CredentialService.java`, `vault/CredentialServiceImpl.java`, `vault/CredentialController.java`, `vault/dto/CredentialResponse.java`, `vault/dto/CredentialSummaryResponse.java`, `vault/dto/VaultHealthResponse.java` (new), `docs/db-design.md`, `docs/password-policy.md` (§3), `docs/decisions.md` (ADR-016), `docs/api-contract.md`, `docs/guide.md` (module map, API index).
+**Decisions:** ADR-016 (dedicated `password_changed_at` column vs. reusing `updated_at`; decrypt-hash-discard reuse detection; health score component weights).
+**Verified, live, against real data (`docs/evidence/milestone-2/s3-9-*` .. `s3-18-*`):** created 3 credentials for one user — one dictionary-weak (`strengthScore: 0`), two sharing an identical strong password (`strengthScore: 5` each) — health showed `total=3, veryWeak=1, veryStrong=2, reused=2, healthScore=63` (hand-verified against the formula: 3.33-avg-score → 40.0 + (1-⅔)×25=8.33 + 15 = 63.33 → 63). Updated the weak credential's password to a strong one: `strengthScore` jumped 0→5, health recomputed to `veryStrong=3, healthScore=83` (60+8.33+15=83.33→83, matches exactly). A follow-up title-only update left `strengthScore` at 5, confirming it doesn't reset on unrelated edits. Backdated one credential's `password_changed_at` 100 days via direct SQL → `staleCredentialCount` became 1, `healthScore` recomputed to 78 (60+8.33+10=78.33→78, matches exactly). A zero-credential user's health returned `total=0, healthScore=100`, confirming per-user isolation and the empty-vault special case.
+**Blockers:** none. **Phase 3 is complete.**
+**Commit:** _batched — see Phase 3 close, ADR-008._

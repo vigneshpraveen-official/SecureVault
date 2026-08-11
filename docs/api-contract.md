@@ -13,10 +13,13 @@ Spring Security itself, uses the same `ApiResponse` envelope (P2.3/M-27).
 | GET | `/actuator/health` | none | — | `{ "status": "UP" }` | 200 | — |
 | POST | `/api/auth/register` | none | `UserRegisterRequest` (fullName, email, password — full validation, see `docs/validation.md`) | `ApiResponse<UserResponse>` (id, fullName, email, role, createdAt — never passwordHash) | 201, 400, 409 | `VALIDATION_FAILED`, `DUPLICATE_EMAIL` |
 | POST | `/api/auth/login` | none | `LoginRequest` (email, password — presence-only validation) | `ApiResponse<LoginResponse>` (accessToken, userId, fullName, email, role) | 200, 400, 401 | `VALIDATION_FAILED`, `INVALID_CREDENTIALS` |
-| POST | `/api/vault` | JWT (Bearer) | `CredentialCreateRequest` (title, username, password, websiteUrl, notes, category) | `ApiResponse<CredentialResponse>` (id, title, username, websiteUrl, notes, category, favorite, createdAt, updatedAt — never password) | 201, 400, 401 | `VALIDATION_FAILED`, `INVALID_CREDENTIALS` |
-| GET | `/api/vault/{id}` | JWT (Bearer) | — | `ApiResponse<CredentialDetailResponse>` (as `CredentialResponse`, plus decrypted `password`) — single-credential reveal only | 200, 400, 401, 403, 404 | `VALIDATION_FAILED`, `INVALID_CREDENTIALS`, `ACCESS_DENIED`, `CREDENTIAL_NOT_FOUND` |
-| GET | `/api/vault` | JWT (Bearer) | — optional `?category=` filter | `ApiResponse<List<CredentialSummaryResponse>>` — list-view shape, distinct type from `CredentialResponse`, no passwords | 200, 401 | `INVALID_CREDENTIALS` |
+| POST | `/api/password/strength` | none (public utility) | `PasswordStrengthRequest` (password — `@NotBlank` only, deliberately unrestricted) | `ApiResponse<PasswordStrengthResponse>` (score 0-5, strength label, entropyBits, feedback[]) — never logs/persists the password (docs/password-policy.md) | 200, 400 | `VALIDATION_FAILED` |
+| POST | `/api/password/generate` | none (public utility) | `GenerateRequest` (length 8-128, includeUppercase/Lowercase/Numbers/Symbols, excludeAmbiguous — at least one class required) | `ApiResponse<GenerateResponse>` (password, strength — reuses the strength endpoint's scoring) | 200, 400 | `VALIDATION_FAILED` |
+| POST | `/api/vault` | JWT (Bearer) | `CredentialCreateRequest` (title, username, password, websiteUrl, notes, category) | `ApiResponse<CredentialResponse>` (id, title, username, websiteUrl, notes, category, favorite, strengthScore, createdAt, updatedAt — never password) | 201, 400, 401 | `VALIDATION_FAILED`, `INVALID_CREDENTIALS` |
+| GET | `/api/vault/{id}` | JWT (Bearer) | — | `ApiResponse<CredentialDetailResponse>` (as `CredentialResponse` minus strengthScore, plus decrypted `password`) — single-credential reveal only | 200, 400, 401, 403, 404 | `VALIDATION_FAILED`, `INVALID_CREDENTIALS`, `ACCESS_DENIED`, `CREDENTIAL_NOT_FOUND` |
+| GET | `/api/vault` | JWT (Bearer) | — optional `?category=` filter | `ApiResponse<List<CredentialSummaryResponse>>` — list-view shape, distinct type from `CredentialResponse`, includes `strengthScore`, no passwords | 200, 401 | `INVALID_CREDENTIALS` |
 | GET | `/api/vault/search?q=` | JWT (Bearer) | — `q` required | `ApiResponse<List<CredentialSummaryResponse>>` — case-insensitive partial match on title/username/websiteUrl | 200, 400, 401 | `VALIDATION_FAILED`, `INVALID_CREDENTIALS` |
+| GET | `/api/vault/health` | JWT (Bearer) | — | `ApiResponse<VaultHealthResponse>` (totalCredentials, band counts, reusedPasswordCount, staleCredentialCount, healthScore 0-100 — formula in `docs/password-policy.md` §3) — aggregate only, never a password or hash | 200, 401 | `INVALID_CREDENTIALS` |
 | PUT | `/api/vault/{id}` | JWT (Bearer) | `CredentialUpdateRequest` (all fields optional; null = unchanged; non-null values still validated) | `ApiResponse<CredentialResponse>` | 200, 400, 401, 403, 404 | `VALIDATION_FAILED`, `INVALID_CREDENTIALS`, `ACCESS_DENIED`, `CREDENTIAL_NOT_FOUND` |
 | DELETE | `/api/vault/{id}` | JWT (Bearer) | — | none — the sole endpoint exempt from the `ApiResponse` envelope (HTTP 204 forbids a body, RFC 9110 §15.3.5); hard delete for now, soft delete arrives in S4.3 | 204, 401, 403, 404 | `INVALID_CREDENTIALS`, `ACCESS_DENIED`, `CREDENTIAL_NOT_FOUND` |
 
@@ -51,4 +54,4 @@ enum/JSON body, a path variable of the wrong type, or a missing required query p
 the rest are reserved for the phases that introduce them (sharing, refresh tokens, MFA).
 
 ---
-_Last updated: S2.4 — 2026-08-11._
+_Last updated: S3.3 — 2026-08-11._

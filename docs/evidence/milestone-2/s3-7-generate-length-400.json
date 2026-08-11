@@ -1,0 +1,2 @@
+{"success":false,"message":"Validation failed","data":null,"errorCode":"VALIDATION_FAILED","errors":[{"field":"length","message":"must be greater than or equal to 8"}],"timestamp":"2026-08-11T06:08:45.946764990Z"}
+HTTP:400

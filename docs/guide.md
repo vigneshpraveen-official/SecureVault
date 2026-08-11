@@ -177,8 +177,9 @@ instead, which write the identical envelope shape by hand.
 | `common/audit/`, `common/util/` | reserved | empty, Phase 4+ |
 | `security/` | `JwtService`, `JwtAuthenticationFilter`, `UserPrincipal`, `CustomUserDetailsService`, `AuthController` (login), `security/crypto/AesEncryptionService`, `security/dto/` | live |
 | `user/` | `User` entity, `Role`, `UserRepository`, `UserService`/`Impl`, `UserController` (register), `UserMapper`, `user/dto/` | live |
-| `vault/` | `Credential` entity, `Category`, `CredentialRepository`, `CredentialService`/`Impl`, `CredentialController` (full CRUD + search/filter), `CredentialMapper`, `vault/dto/` | live |
-| `password/`, `sharing/`, `notification/`, `monitoring/`, `report/`, `admin/` | reserved (package-info only) | empty, Phase 3+ |
+| `vault/` | `Credential` entity (+ `strengthScore`/`passwordChangedAt`, S3.3), `Category`, `CredentialRepository`, `CredentialService`/`Impl` (incl. `getHealth`), `CredentialController` (full CRUD + search/filter/health), `CredentialMapper`, `vault/dto/` | live |
+| `password/` | `PasswordStrengthService`/`Impl`, `PasswordGeneratorService`/`Impl`, `PasswordController` (`/strength`, `/generate`), `password/dto/` (incl. the custom `@AtLeastOneCharacterClass` constraint) — no `Entity`/`Repository`, it's a stateless utility feature, not a persisted one | live |
+| `sharing/`, `notification/`, `monitoring/`, `report/`, `admin/` | reserved (package-info only) | empty, Phase 5+ |
 
 Every feature package with real code follows the same shape: `Entity`, `Repository`
 (Spring Data interface), `Service`/`ServiceImpl`, `Controller`, `Mapper` (MapStruct), and a
@@ -194,8 +195,9 @@ documented ahead of time and migrated in the phase that needs it.
 ## API index
 
 Full live index (every real endpoint, request/response DTOs, status/error codes) is
-`docs/api-contract.md`, regenerated from the actual controllers each phase. As of Phase 2:
-register, login, and full vault CRUD + search/filter — 8 endpoints plus `/actuator/health`.
+`docs/api-contract.md`, regenerated from the actual controllers each phase. As of Phase 3:
+register, login, password strength/generation, and full vault CRUD + search/filter/health —
+11 endpoints plus `/actuator/health`.
 
 ## Testing
 
@@ -219,4 +221,4 @@ Neon (PostgreSQL), Upstash (Redis) — see master §18.
   stop it before retrying.
 
 ---
-_Last updated: S2.4 — 2026-08-11._
+_Last updated: S3.3 — 2026-08-11._

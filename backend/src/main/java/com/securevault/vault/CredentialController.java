@@ -7,6 +7,7 @@ import com.securevault.vault.dto.CredentialDetailResponse;
 import com.securevault.vault.dto.CredentialResponse;
 import com.securevault.vault.dto.CredentialSummaryResponse;
 import com.securevault.vault.dto.CredentialUpdateRequest;
+import com.securevault.vault.dto.VaultHealthResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -64,6 +65,16 @@ public class CredentialController {
         return ResponseEntity.ok(
                 ApiResponse.success(
                         "Search results", credentialService.search(principal.getId(), q)));
+    }
+
+    // Literal "/health" ranks above the "/{id}" pattern in Spring's path matching (same as
+    // "/search" already does), so this never collides with getById.
+    @GetMapping("/health")
+    public ResponseEntity<ApiResponse<VaultHealthResponse>> health(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Vault health computed", credentialService.getHealth(principal.getId())));
     }
 
     @PutMapping("/{id}")

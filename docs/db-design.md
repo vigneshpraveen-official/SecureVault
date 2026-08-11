@@ -31,7 +31,7 @@ Connection used to verify this session: `localhost:5432`, database `securevault`
 **Primary key:** `id`. **Unique:** `email`. **Indexes:** the unique constraint on `email` is
 the only index this table needs — every login and duplicate-check query goes through it.
 
-## `credentials` — implemented in V1
+## `credentials` — implemented in V1 + V2
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
@@ -44,7 +44,8 @@ the only index this table needs — every login and duplicate-check query goes t
 | notes | TEXT | nullable | encrypted at the application layer if sensitive (Phase 1+) |
 | category | VARCHAR(30) | NOT NULL | enum value; **indexed** |
 | favorite | BOOLEAN | NOT NULL, DEFAULT false | |
-| strength_score | SMALLINT | nullable | cached analyzer result (Phase 3) |
+| strength_score | SMALLINT | nullable | cached `PasswordStrengthService` result (0-5), set at create and whenever the password actually changes — **mapped as of S3.3** (existed unmapped since V1) |
+| password_changed_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | **added in V2 (S3.3)** — set at create, updated *only* when the password itself changes, never on a title/category/etc. edit; deliberately separate from `updated_at` for that reason. Existing pre-V2 rows were backfilled to `now()` at migration time (their true original change date isn't recoverable — disclosed baseline, see ADR) |
 | deleted | BOOLEAN | NOT NULL, DEFAULT false | soft delete (Phase 4) |
 | deleted_at | TIMESTAMPTZ | nullable | set when `deleted` flips true |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | |

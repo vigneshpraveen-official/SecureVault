@@ -1,0 +1,1 @@
+{"success":true,"message":"Password analyzed","data":{"score":3,"strength":"Medium","entropyBits":31.2,"feedback":["Increase length to 12+ characters","Add a special character"]},"errorCode":null,"errors":null,"timestamp":"2026-08-11T06:06:57.446889450Z"}

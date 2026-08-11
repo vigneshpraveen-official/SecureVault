@@ -17,5 +17,6 @@ public record CredentialSummaryResponse(
         String notes,
         Category category,
         boolean favorite,
+        Integer strengthScore,
         Instant createdAt,
         Instant updatedAt) {}

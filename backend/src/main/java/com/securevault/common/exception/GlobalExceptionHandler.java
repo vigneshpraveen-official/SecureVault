@@ -4,6 +4,7 @@ import com.securevault.common.response.ApiResponse;
 import jakarta.validation.ConstraintViolationException;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -34,13 +35,23 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException ex) {
-        var errors =
+        // Field-level (@NotBlank on a single property) and class-level (@AtLeastOneCharacterClass
+        // on the whole record) violations land in different lists on the BindingResult — a
+        // class-level-only violation was silently dropping its message entirely before this
+        // included getGlobalErrors() too (found while exercising GenerateRequest in S3.2).
+        var fieldErrors =
                 ex.getBindingResult().getFieldErrors().stream()
                         .map(
                                 fe ->
                                         new ApiResponse.FieldError(
-                                                fe.getField(), fe.getDefaultMessage()))
-                        .toList();
+                                                fe.getField(), fe.getDefaultMessage()));
+        var globalErrors =
+                ex.getBindingResult().getGlobalErrors().stream()
+                        .map(
+                                ge ->
+                                        new ApiResponse.FieldError(
+                                                ge.getObjectName(), ge.getDefaultMessage()));
+        var errors = Stream.concat(fieldErrors, globalErrors).toList();
         return ResponseEntity.badRequest()
                 .body(
                         ApiResponse.error(

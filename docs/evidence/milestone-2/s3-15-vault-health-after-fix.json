@@ -1,0 +1,1 @@
+{"success":true,"message":"Vault health computed","data":{"totalCredentials":3,"veryWeakCount":0,"weakCount":0,"mediumCount":0,"strongCount":0,"veryStrongCount":3,"reusedPasswordCount":2,"staleCredentialCount":0,"healthScore":83},"errorCode":null,"errors":null,"timestamp":"2026-08-11T06:29:11.556086350Z"}

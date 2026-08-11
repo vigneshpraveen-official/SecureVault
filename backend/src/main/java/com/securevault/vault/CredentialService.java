@@ -5,6 +5,7 @@ import com.securevault.vault.dto.CredentialDetailResponse;
 import com.securevault.vault.dto.CredentialResponse;
 import com.securevault.vault.dto.CredentialSummaryResponse;
 import com.securevault.vault.dto.CredentialUpdateRequest;
+import com.securevault.vault.dto.VaultHealthResponse;
 import java.util.List;
 
 public interface CredentialService {
@@ -24,4 +25,10 @@ public interface CredentialService {
     CredentialResponse update(Long id, Long userId, CredentialUpdateRequest request);
 
     void delete(Long id, Long userId);
+
+    /**
+     * Reuse detection decrypts each credential's password in memory, hashes it, and discards
+     * everything immediately — never logs, caches, or returns plaintext (P3.3).
+     */
+    VaultHealthResponse getHealth(Long userId);
 }

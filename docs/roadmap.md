@@ -9,7 +9,7 @@ session log; this file is the static map both `progress.md` and every AI agent p
 forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching entry in
 `docs/progress.md`'s SESSION LOG.
 
-**Progress: 13 / 53 sessions complete. Milestone 1 complete. Phase 2 complete.**
+**Progress: 16 / 53 sessions complete. Milestone 1 complete. Phase 2 complete. Phase 3 complete.**
 
 ---
 
@@ -49,9 +49,9 @@ forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching 
 - [x] **S2.4** — Sweep + Postman regression — *2026-08-11*
 
 ### Phase 3 — Password intelligence
-- [ ] **S3.1** — Strength analyzer (M-29)
-- [ ] **S3.2** — Generator with `SecureRandom` (M-30)
-- [ ] **S3.3** — Entropy + vault integration
+- [x] **S3.1** — Strength analyzer (M-29) — *2026-08-11*
+- [x] **S3.2** — Generator with `SecureRandom` (M-30) — *2026-08-11*
+- [x] **S3.3** — Entropy + vault integration — *2026-08-11*
 
 ### Phase 4 — Data integrity, performance, operations
 - [ ] **S4.1** — `@Transactional` + AuditLog with rollback proof (M-31, M-32)
@@ -113,4 +113,4 @@ forward — see `docs/ai/CONTEXT.md`). Never mark a box done without a matching 
 - [ ] **S9.2** — Demo rehearsal + evidence pack: full user journey in under 8 minutes, fallback screenshots for cold-start delays
 
 ---
-_Total: 53 sessions across 10 phases. Last updated: S2.4 — 2026-08-11._
+_Total: 53 sessions across 10 phases. Last updated: S3.3 — 2026-08-11._

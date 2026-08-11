@@ -19,11 +19,15 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 /**
- * Matches V1__init.sql's credentials table. strength_score is unmapped until Phase 3.
- * category/search/filter behaviour arrives in S1.5 — every credential defaults to OTHER here.
+ * Matches V1__init.sql + V2__add_password_changed_at.sql. category/search/filter behaviour arrives
+ * in S1.5 — every credential defaults to OTHER here. strengthScore/passwordChangedAt are set by
+ * CredentialServiceImpl at create time and whenever the password actually changes (S3.3) — never by
+ * the mapper.
  */
 @Entity
 @Table(name = "credentials")
@@ -65,6 +69,16 @@ public class Credential {
     @Column(nullable = false)
     @Builder.Default
     private boolean favorite = false;
+
+    // Short, not Integer — the DB column is SMALLINT (V1__init.sql); ddl-auto=validate requires
+    // an exact type match. @JdbcTypeCode pins it to SMALLINT explicitly rather than relying on
+    // Hibernate's default Java-type inference, which validated this as INTEGER without it.
+    @JdbcTypeCode(SqlTypes.SMALLINT)
+    @Column(name = "strength_score")
+    private Short strengthScore;
+
+    @Column(name = "password_changed_at", nullable = false)
+    private Instant passwordChangedAt;
 
     @Column(nullable = false)
     @Builder.Default

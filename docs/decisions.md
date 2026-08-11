@@ -199,3 +199,100 @@ the message string needed neither).
 **Consequences:** Any new business exception goes in `common.exception`, extends
 `BusinessException`, and needs no new handler. Any new entity needing ownership checks reuses
 `AccessDeniedException` as-is.
+
+### ADR-014 — Password strength algorithm: penalty thresholds, whole-string dictionary match, true Shannon entropy
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P3.1/M-29 fixes the base scoring formula (+1 each for length>12, upper, lower,
+digit, special) but leaves the penalty thresholds, dictionary-match strategy, and "Shannon
+entropy" definition to be designed and documented so the score is reproducible and explainable
+(the prompt's explicit requirement). The mentor's worked example (`Welcome123` → score 3, no
+sequence penalty despite containing "123") constrains the sequence-detection threshold.
+**Decision:** Repeat-run penalty triggers at **3+** identical consecutive characters (matches
+the prompt's own examples, `aaa`/`111`). Sequence-run penalty triggers at **4+** characters,
+checked as both an ascending/descending ASCII run and a keyboard-row substring (`qwertyuiop`,
+`asdfghjkl`, `zxcvbnm`, `1234567890`, or their reverses) — 4, not 3, specifically so `Welcome123`'s
+3-digit `123` run does not false-positive against the mentor's own worked example, while
+`abcd1234` (two 4-runs) still triggers. Dictionary check is a **whole-password, case-insensitive
+exact match** against a ~250-entry hand-curated list (`classpath:/password/common-passwords.txt`)
+— not a substring search — so a passphrase merely containing a common word as one segment isn't
+penalized, only reproducing a known-weak password exactly. `entropyBits` is the password's own
+**true Shannon entropy** (`H = -Σp(c)·log2(p(c))` over its character-frequency distribution,
+scaled by length) — not the common charset-pool shortcut (`length × log2(poolSize)`) some
+strength meters use, since the prompt names "Shannon entropy" specifically and the pool-size
+formula measures a different thing (theoretical search-space size vs. actual information content
+of the submitted characters). Full detail and worked examples in `docs/password-policy.md` §1.
+**Alternatives:** 3-character sequence threshold (rejected — breaks the mentor's own worked
+example); substring dictionary match (rejected — more thorough but produces false positives on
+otherwise-strong passphrases that happen to contain a common word, and the prompt's worked
+examples don't require it); charset-pool entropy estimate (rejected — doesn't match "Shannon
+entropy" literally, and rewards character-class variety twice, once in the base score and again
+in entropy, whereas true per-character entropy is an independent signal: it also penalizes
+repetition, which the base score's penalty already covers via a different mechanism, giving a
+reviewer two independent numbers instead of one restating the other).
+**Consequences:** Any future change to the dictionary file, run thresholds, or entropy formula
+must update `docs/password-policy.md` in the same change — the two are required to stay in
+lockstep (enforced by review, not by code).
+
+### ADR-015 — Password generator: guarantee-then-fill-then-shuffle with SecureRandom
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P3.2/M-30 requires every generated password to contain at least one character from
+every *enabled* class, using `SecureRandom` exclusively. A naive implementation — build one
+combined pool from all enabled classes, then pick `length` characters uniformly from it — cannot
+guarantee that; at the prompt's own minimum length (8) with 4 enabled classes, a non-trivial
+fraction of naive-fill outputs would be missing at least one requested class.
+**Decision:** Three-step generation, entirely on one injected `SecureRandom` instance: (1) pick
+exactly one character from each enabled class's pool — this alone guarantees every enabled class
+appears; (2) fill the remaining `length − enabledClassCount` slots from the **union** of all
+enabled pools; (3) Fisher-Yates shuffle the full result — without this step the guaranteed
+characters from step 1 would always occupy the first few positions, itself a detectable,
+non-random pattern. `excludeAmbiguous` (`l`, `I`, `1`, `O`, `0`) is applied per-pool before step 1
+runs, so a guaranteed character is never one of the excluded ones. "At least one character class
+enabled" is enforced by a custom class-level `@AtLeastOneCharacterClass` Bean Validation
+constraint on `GenerateRequest` (P2.2's validation pipeline extended, not a one-off manual check)
+so a violation returns the same `400 VALIDATION_FAILED` shape as every other validation failure.
+**Alternatives:** Naive single-pool random fill (rejected — cannot guarantee class coverage, the
+exact bug the prompt calls out by name); rejecting and retrying naive fills until they happen to
+satisfy every class (rejected — non-deterministic runtime, unnecessarily complex, and strictly
+dominated by the guarantee-first approach); a manual `if` check for "at least one class" outside
+Bean Validation (rejected — inconsistent with every other DTO in the project, which all validate
+through the same `@Valid`/`GlobalExceptionHandler` pipeline since S2.2).
+**Consequences:** `java.util.Random` must never appear anywhere in this codebase — verified by
+grep each session touching this area (see `docs/progress.md` S3.2 log entry for this session's
+result). Any new character class added later (e.g. a Unicode/extended set) must go through the
+same guarantee-then-fill-then-shuffle shape, not a shortcut.
+
+### ADR-016 — Dedicated `password_changed_at` column; reuse detection via decrypt-hash-discard; health score weights
+**Date:** 2026-08-11 · **Status:** accepted
+**Context:** P3.3 needs to know how long ago a credential's *password* last changed, to flag
+stale (90+ day) passwords in `GET /api/vault/health`. `credentials.updated_at` already tracks
+"last modified," but it changes on **any** field edit (renaming a credential, changing its
+category), which would silently reset password-age tracking on an unrelated edit — a false
+freshness signal. Reuse detection needs to compare every credential's plaintext password against
+every other, without ever persisting, logging, or returning plaintext.
+**Decision:** New column `password_changed_at` (`V2__add_password_changed_at.sql`, backfilled to
+`now()` for existing rows — their true original change date isn't recoverable, and this is
+disclosed as a limitation in `docs/db-design.md`), set at credential creation and updated **only**
+inside the `if (request.password() != null) { ... }` branch of `CredentialServiceImpl.update(...)`
+that already isolates "the password actually, verifiably changed" (S1.4's decrypt-and-compare
+logic). Reuse detection decrypts each credential's password with the existing
+`AesEncryptionService`, hashes it with SHA-256, and groups by hash — plaintext and hashes exist
+only as method-local variables for the duration of `getHealth(...)` and are never logged, cached,
+or included in `VaultHealthResponse` (aggregate counts only). Health score formula weights
+strength at 60%, uniqueness (non-reuse) at 25%, freshness (non-staleness) at 15% of the 0-100
+total — strength matters most because it's the primary determinant of whether any individual
+credential can be brute-forced; reuse is the second-largest real-world risk (one leaked site
+compromises every reused credential); staleness alone is the weakest signal, since an old but
+strong, unique password is still fine. Full formula in `docs/password-policy.md` §3.
+**Alternatives:** Reusing `updated_at` for staleness (rejected — false-resets on unrelated edits,
+explained above); storing/caching password hashes on the `Credential` row for faster reuse
+checks across requests (rejected — persisting even a hash of the vault secret outside the
+existing `encrypted_password` column widens the exposure surface for no real performance benefit
+at this project's scale; recomputing per-request keeps the "decrypt, use, discard" property
+airtight); equal-weighted health score thirds (rejected — doesn't reflect that a weak password is
+strictly more exploitable than a stale-but-strong one, so an equal split would under-penalize the
+worse condition).
+**Consequences:** Any future write path that changes `Credential.encryptedPassword` must also set
+`passwordChangedAt` in the same transaction, or the health score silently understates staleness
+for that row. `GET /api/vault/health` scales linearly with the user's credential count (one
+decrypt per credential) — acceptable at this project's scale; revisit if profiling ever shows
+otherwise.

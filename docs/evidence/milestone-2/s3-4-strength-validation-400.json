@@ -1,0 +1,2 @@
+{"success":false,"message":"Validation failed","data":null,"errorCode":"VALIDATION_FAILED","errors":[{"field":"password","message":"must not be blank"}],"timestamp":"2026-08-11T06:06:57.521884987Z"}
+HTTP:400
