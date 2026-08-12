@@ -935,3 +935,108 @@ treating "no failures on record" as automatically eligible.
 already have failed login attempts on record (i.e., it durably reinforces an existing brute-force
 lock) — locking an otherwise-clean account is cosmetic and self-reverses on that user's next
 successful login. Flagged to the developer directly, not just buried in this file.
+
+---
+
+### ADR-036 — Testcontainers: singleton-container pattern, not `@Container` (found live, fixed)
+**Date:** 2026-08-12 · **Status:** accepted
+**Context:** P7.2's four integration test classes (`VaultJourneyIntegrationTest`,
+`VaultPaginationIntegrationTest`, `SharingJourneyIntegrationTest`, `AuditRollbackIntegrationTest`)
+all extend `AbstractIntegrationTest`, which declares one shared `static PostgreSQLContainer` and
+one shared `static GenericContainer` (Redis) so the whole suite pays container-startup cost once,
+not once per class. The first draft annotated both fields `@Container` (plus `@Testcontainers` on
+the class). Running any single class in isolation passed; running the full `mvn test` suite made
+every class *after* the first fail its very first `register`/`login` call with a **500**.
+**Root cause (found live, not theoretical):** `@Container` ties a container's start/stop to *its
+owning test class's* JUnit lifecycle — started in that class's `@BeforeAll`, stopped in its
+`@AfterAll`. A `static` field is genuinely one shared instance across every subclass, but the
+Testcontainers JUnit5 extension's start/stop bookkeeping is per-class, not per-field: the first
+class to finish its tests stopped the (shared) container out from under every class that ran
+after it, and Spring's `@ServiceConnection`-injected `DataSource`/`RedisConnectionFactory` still
+pointed at the now-dead container's cached host/port.
+**Decision:** Removed `@Container` from both fields; start both containers exactly once in a
+`static` initializer block instead, and never call `.stop()` on them — Testcontainers' own Ryuk
+reaper container cleans them up when the whole JVM/test run exits. `@ServiceConnection` is kept
+(it only wires connection details into Spring's context; it never controlled lifecycle). This is
+Testcontainers' own documented "singleton containers" pattern — the fix wasn't a workaround, it
+was switching to the pattern the `@Container` shortcut is explicitly *not* meant for when a
+container is shared across multiple test classes.
+**Verified:** full `mvn clean verify` — 90/90 tests green (was 84/90 with 6 failures before the
+fix, then a separate real test-isolation bug in `VaultPaginationIntegrationTest` surfaced and was
+fixed too — see docs/evidence/security-matrix.md, Finding 3).
+**Consequences:** Any future integration test class must extend `AbstractIntegrationTest` (not
+declare its own containers) to stay inside this shared-singleton pattern; a class that needs
+different container configuration would need its own, separately-lifecycled containers, not a
+`@Container` override on the shared fields.
+
+---
+
+### ADR-037 — Frontend tests: MSW at the network boundary, `.env.test` over per-handler wildcards
+**Date:** 2026-08-12 · **Status:** accepted
+**Context:** P7.4 requires mocking "the network at the boundary (MSW or an axios mock), not by
+stubbing components" — the point being that `api/client.js`'s interceptor logic, the
+`ApiResponse`-envelope unwrap, and error normalization (`api/client.js`'s `apiRequest`) all run
+for real in a test, not a bypassed mock of `vaultApi.list()` etc. The first draft registered MSW
+handlers with relative paths (`http.post('/api/auth/login', ...)`) and every one of them silently
+failed to match, live: `[MSW] Error: intercepted a request without a matching request handler` —
+the app's real `.env.local` sets `VITE_API_BASE_URL=http://localhost:8080`, which Vite also loads
+under Vitest, so axios builds an **absolute** URL and MSW's relative-path handler pattern (which
+resolves against jsdom's default origin, `http://localhost:3000`) never matches it.
+**Decision:** Added `frontend/.env.test` (committed, no secrets — just
+`VITE_API_BASE_URL=`, empty) rather than rewriting every handler to a wildcard `*/api/...`
+pattern. Vite loads `.env.[mode]` files with higher priority than `.env.local` for that mode, and
+Vitest's default mode is `test`, so this one file makes every test's axios calls relative
+(`/api/vault`, not `http://localhost:8080/api/vault`) without touching any test file.
+**Alternatives considered:** per-handler wildcard patterns (`http.post('*/api/auth/login', ...)`)
+— rejected as noisier (every handler in every test file needs the prefix) and easier to typo
+into a silent non-match than one shared env file; mocking `api/client.js`'s `apiRequest` directly
+— rejected, defeats the point of testing at the network boundary per the prompt's own instruction.
+**Consequences:** Any new test file can register MSW handlers with plain relative paths and they
+will just work; a developer adding a new `.env.test.local` (if ever needed for local-only test
+overrides) would take priority over this file automatically, per Vite's own env precedence.
+
+---
+
+### ADR-038 — JaCoCo attempted and reverted this session; blocked on a sustained Maven Central rate limit
+**Date:** 2026-08-12 · **Status:** reverted, not applied — retry in a future session
+**Context:** P7.5 asks for "a realistic gate on the SERVICE layer specifically (aim ~80% there)
+rather than a vanity number across the whole project." Not every `*ServiceImpl` in this codebase
+has a dedicated unit test — S7.1's own explicit minimum list only named
+`AesEncryptionService`/password strength/password generator/`UserService`/`CredentialService`/
+password history/sharing. Admin, dashboard, monitoring, notification, MFA, refresh-token, and
+async-task services are exercised indirectly (through the P7.2 HTTP-level integration tests and
+the S7.3 live security matrix) but have no direct `*ServiceImplTest`. A blanket repo-wide 80%
+gate would either fail the build outright or (worse) get quietly lowered to whatever number makes
+it pass, which is exactly the "inflated vanity number" the prompt warns against — so the plan was
+to scope `<includes>` to the S7.1-tested classes, measure the real number there, and only then
+set a `check` threshold at (or just under) what was actually measured.
+**What actually happened:** `jacoco-maven-plugin` 0.8.13 (`prepare-agent` + `report`, bound to the
+`test` phase) was added to `backend/pom.xml`. It was **never successfully resolved** — every
+`mvn clean verify` attempt (and a bare `mvn -o clean verify` offline check) failed, because the
+plugin JAR had never been cached in this environment's `~/.m2` before this session and Maven
+Central would not serve it (see Blocker below). Leaving an unresolvable plugin declared in
+`pom.xml` would mean the build itself is broken for anyone who runs it — a build that has never
+once been verified green with that change in place is not something this project ships, per its
+own standing rule ("never push a non-compiling build," `docs/securevault_prompts.md` P9.1). The
+plugin block and `jacoco.version` property were therefore **reverted** before this phase closed.
+`mvn -o clean verify` was re-run immediately after reverting and confirmed green (90/90 tests,
+Spotless clean, fully offline — no phantom dependency on the unresolved plugin remains).
+**Blocker, verified not transient:** More than ten resolution attempts across roughly 70 minutes,
+including direct `curl` probes of `repo.maven.apache.org` and the `repo1.maven.org` alias (both
+with and without Maven itself, and against the bare repository index path, not just this one
+artifact's `.pom`) all returned HTTP 429 (rate limited). General internet connectivity from the
+same shell was confirmed working throughout (`registry.npmjs.org`, `github.com`, `google.com` all
+returned 200 in the same window), so this is specifically Maven Central rate-limiting this
+environment's shared egress IP, not a broader network failure — plausible given many concurrent
+sandboxed sessions likely share the same NAT gateway. No numbers in
+`docs/evidence/milestone-4/coverage.md` are estimated or fabricated to work around this; the
+file says plainly what is and isn't known yet.
+**Consequences:** JaCoCo is not in `backend/pom.xml` right now — this ADR documents an attempt
+that was reverted, not a decision in effect. To actually add it in a future session: confirm
+Maven Central is reachable first (`curl -sI https://repo.maven.apache.org/maven2/` returning 200
+rather than 429), add the same `jacoco-maven-plugin` `prepare-agent`+`report` block back, run
+`mvn clean verify` and confirm it succeeds before committing, read the real per-class
+line-coverage percentages from `target/site/jacoco/index.html` for the eight classes named above,
+then add a `check` execution bound to `verify` with `<includes>` scoped to exactly those eight
+classes and a threshold at or just below the measured number — never above
+it. `docs/progress.md`'s Open blockers list carries this forward explicitly so it isn't lost.

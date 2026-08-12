@@ -1,0 +1,37 @@
+# Active only under @ActiveProfiles("test") (P7.2 integration tests). Datasource/Redis
+# connection details below are placeholders only — AbstractIntegrationTest's @ServiceConnection
+# containers replace them entirely at runtime, but the placeholders must still be *resolvable*
+# strings (not ${ENV_VAR} with no default) or Spring's property binding fails before the
+# container-backed connection details ever get a chance to take over.
+#
+# The JWT/AES secrets below are fixed, committed, test-only values — never used outside this
+# profile, never real secrets. Real secrets are never defaulted in application.yml (see the
+# comment there); this file is the one deliberate, documented exception, scoped to tests only.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/overridden-by-testcontainers
+    username: test
+    password: test
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: ""
+  mail:
+    host: localhost
+    port: 1025
+
+app:
+  security:
+    jwt-secret: KVqEKhsQMLdFxxEqJDS8gWfJR8LvHx+lqj7wNEB102s=
+    jwt-access-expiry-ms: 900000
+    jwt-refresh-expiry-ms: 604800000
+    aes-secret-key: uNlGJsUMVp+FtcZDCPEfk9gXImE8x3g56jG4AtGg63Q=
+  cors:
+    allowed-origins: http://localhost:5173

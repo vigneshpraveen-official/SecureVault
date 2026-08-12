@@ -78,4 +78,89 @@ class PasswordStrengthServiceImplTest {
 
         assertEquals(first, second);
     }
+
+    @Test
+    void lengthExactlyTwelveDoesNotEarnTheLengthPoint() {
+        // ">12" is a strict inequality — exactly 12 characters must NOT score the length point.
+        PasswordStrengthResponse twelve = service.analyze("Ab3#Ab3#Ab3#");
+        PasswordStrengthResponse thirteen = service.analyze("Ab3#Ab3#Ab3#x");
+
+        assertEquals(
+                4, twelve.score(), "12 chars: upper+lower+digit+special only, no length point");
+        assertEquals(5, thirteen.score(), "13 chars: length point now applies");
+    }
+
+    @Test
+    void tworepeatedCharactersInARowIsNotPenalized() {
+        // REPEAT_MIN_RUN is 3 — a run of exactly 2 must not trigger the repetition penalty.
+        PasswordStrengthResponse result = service.analyze("aaB3#xyz9Q!");
+
+        assertTrue(
+                result.feedback().stream().noneMatch(f -> f.contains("repeating")),
+                "a run of only 2 identical characters must not be penalized");
+    }
+
+    @Test
+    void threeRepeatedCharactersIsTheMinimumPenalizedRun() {
+        PasswordStrengthResponse result = service.analyze("aaaB3#xyz9Q!");
+
+        assertTrue(
+                result.feedback().stream().anyMatch(f -> f.contains("repeating")),
+                "a run of exactly 3 identical characters must be penalized");
+    }
+
+    @Test
+    void threeCharSequentialRunIsNotPenalized() {
+        // SEQUENCE_MIN_RUN is 4 — "abc" alone (3 chars) must not trigger the sequence penalty.
+        PasswordStrengthResponse result = service.analyze("Zx9#abcQ7!mN");
+
+        assertTrue(
+                result.feedback().stream().noneMatch(f -> f.contains("sequential")),
+                "a 3-character ascending run must not be penalized");
+    }
+
+    @Test
+    void descendingSequentialRunIsPenalized() {
+        PasswordStrengthResponse result = service.analyze("Zx9#9876Q7!mN");
+
+        assertTrue(
+                result.feedback().stream().anyMatch(f -> f.contains("sequential")),
+                "a 4-character descending run must be penalized, not just ascending");
+    }
+
+    @Test
+    void keyboardRowRunIsPenalizedEvenWithoutAsciiAdjacency() {
+        // "qwer" is a keyboard-row run but not an ASCII-ordinal-adjacent sequence.
+        PasswordStrengthResponse result = service.analyze("Zx9#qwerQ7!mN");
+
+        assertTrue(
+                result.feedback().stream().anyMatch(f -> f.contains("sequential")),
+                "a keyboard-row run must be penalized");
+    }
+
+    @Test
+    void scoreNeverGoesBelowZeroEvenWithEveryPenaltyStacked() {
+        // "password" is dictionary-listed, all-lowercase (no variety points), no penalizable
+        // repeat/sequence — score floors at 0, never negative.
+        PasswordStrengthResponse result = service.analyze("password");
+
+        assertEquals(0, result.score());
+    }
+
+    @Test
+    void entropyBitsIsPositiveForANonEmptyPassword() {
+        PasswordStrengthResponse result = service.analyze("Zx9#qwerQ7!mN");
+
+        assertTrue(result.entropyBits() > 0, "a non-empty password must have positive entropy");
+    }
+
+    @Test
+    void labelForScoreCoversEveryBand() {
+        assertEquals("Very Weak", service.labelForScore(0));
+        assertEquals("Weak", service.labelForScore(1));
+        assertEquals("Weak", service.labelForScore(2));
+        assertEquals("Medium", service.labelForScore(3));
+        assertEquals("Strong", service.labelForScore(4));
+        assertEquals("Very Strong", service.labelForScore(5));
+    }
 }

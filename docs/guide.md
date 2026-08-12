@@ -315,8 +315,43 @@ total (per the live OpenAPI doc, `GET /v3/api-docs`), disabled in the `prod` pro
 
 ## Testing
 
-**TBD — added in Phase 7.** Target: JUnit 5 + Mockito (unit), Testcontainers PostgreSQL
-(integration) per master D-16.
+**Backend** (JUnit 5 + Mockito unit tests, `@SpringBootTest`+Testcontainers integration tests
+— Phase 7):
+```bash
+cd backend
+mvn test              # unit + integration tests
+mvn clean verify       # tests + Spotless check
+```
+- Integration tests (`src/test/java/com/securevault/integration/`) need a working Docker
+  install — they use Testcontainers to spin up real PostgreSQL 16 and Redis 7 containers, one of
+  each shared across the whole suite (`AbstractIntegrationTest`, the Testcontainers "singleton
+  container" pattern — see ADR-036). `@Testcontainers(disabledWithoutDocker = true)` means: if
+  Docker isn't reachable, these tests are **skipped**, not failed — `mvn test`/`verify` still
+  passes, just without integration coverage. Confirm Docker is reachable with `docker info`
+  before expecting them to actually run.
+- `docs/evidence/security-matrix.md` was captured with the real app running
+  (`mvn spring-boot:run -Dspring-boot.run.profiles=local`) plus `docker-compose`'s Postgres/Redis
+  — re-run it any time with `scripts/security-matrix.sh` against a running backend.
+- **No JaCoCo coverage report yet.** It was attempted in S7.5 and reverted after Maven Central
+  wouldn't resolve the plugin in that session (see ADR-038 and
+  `docs/evidence/milestone-4/coverage.md`) — adding it back is the first thing a future testing
+  session should do, once Maven Central is reachable (`curl -sI
+  https://repo.maven.apache.org/maven2/` → 200, not 429).
+
+**Frontend** (Vitest + React Testing Library + MSW — Phase 7):
+```bash
+cd frontend
+npm test            # vitest run — single pass, CI-friendly
+npm run test:watch  # vitest — watch mode for local development
+```
+- MSW (`msw/node`) intercepts at the network boundary (`src/test/server.js`,
+  `onUnhandledRequest: 'error'`) — components call the real `api/*.js` modules and the real
+  `apiRequest` envelope-unwrap/error-normalization logic in `api/client.js`; only the actual HTTP
+  round trip is faked.
+- `frontend/.env.test` (committed) sets `VITE_API_BASE_URL=` (empty) so requests stay relative
+  in tests and MSW handlers can use plain paths like `http.get('/api/vault', ...)` — see ADR-037.
+- `src/test/renderWithProviders.jsx` wraps a component in a fresh Redux store + `MemoryRouter`;
+  pass `preloadedState`/`route` to start from a specific scenario instead of a real login flow.
 
 ## Deployment
 
@@ -339,6 +374,15 @@ Neon (PostgreSQL), Upstash (Redis) — see master §18.
 - **Login works but every other request 401s** — check `frontend/.env.local` exists (Vite
   won't read `.env.example`); a missing `VITE_API_BASE_URL` falls back to a relative URL that
   won't reach a backend on a different port.
+- **`mvn test` reports 0 integration tests run, or they show as skipped** — Docker isn't
+  reachable from the JVM running Maven (`@Testcontainers(disabledWithoutDocker = true)` skips
+  rather than fails). Run `docker info` first; on Linux with Docker Desktop, the daemon is a
+  user systemd service (`systemctl --user start docker-desktop`) that can stop after the machine
+  sleeps/idles.
+- **A `mvn` plugin/dependency fails to resolve with a 429 status** — Maven Central is rate
+  -limiting the current network; this is external and transient, not a project misconfiguration.
+  Wait a few minutes and retry; `mvn -o ...` (offline) works once everything needed is already
+  cached in `~/.m2`.
 
 ---
-_Last updated: S6.8 — 2026-08-11._
+_Last updated: S7.5 — 2026-08-12._

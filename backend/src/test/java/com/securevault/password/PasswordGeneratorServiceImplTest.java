@@ -77,4 +77,42 @@ class PasswordGeneratorServiceImplTest {
 
         assertTrue(password.chars().allMatch(Character::isDigit));
     }
+
+    @Test
+    void minimumLengthOfEightIsHonoredAndStillGuaranteesEveryEnabledClass() {
+        GenerateRequest request = new GenerateRequest(8, true, true, true, true, false);
+
+        String password = service.generate(request).password();
+
+        assertEquals(8, password.length());
+        assertTrue(password.chars().anyMatch(Character::isUpperCase));
+        assertTrue(password.chars().anyMatch(Character::isLowerCase));
+        assertTrue(password.chars().anyMatch(Character::isDigit));
+        assertTrue(password.chars().anyMatch(c -> !Character.isLetterOrDigit(c)));
+    }
+
+    @Test
+    void twoEnabledClassesBothAppearEvenAtTheMinimumLength() {
+        // length == number of enabled classes is the tightest case for the guarantee-then-fill
+        // step — every slot is claimed by a guaranteed character, none are left for the union fill.
+        GenerateRequest request = new GenerateRequest(8, true, false, true, false, false);
+
+        for (int i = 0; i < 50; i++) {
+            String password = service.generate(request).password();
+            assertTrue(password.chars().anyMatch(Character::isUpperCase));
+            assertTrue(password.chars().anyMatch(Character::isDigit));
+            assertTrue(password.chars().noneMatch(Character::isLowerCase));
+        }
+    }
+
+    @Test
+    void generatedPasswordCarriesItsOwnStrengthAnalysisFromTheSharedService() {
+        GenerateRequest request = new GenerateRequest(20, true, true, true, true, false);
+
+        var response = service.generate(request);
+
+        assertEquals(
+                response.strength(),
+                new PasswordStrengthServiceImpl().analyze(response.password()));
+    }
 }

@@ -1,19 +1,19 @@
 # SecureVault — Progress Log
 
 ## CURRENT STATE
-- Phase: 6 — React frontend (**complete**) — Milestone 3 complete (Phases 5-6). Milestone 4 (Phases 6-9) in progress.
-- Last session: S6.8 (frontend polish — responsive, accessibility, error boundary, session-expiry UX, performance, consistency pass)
-- Build: backend green (unchanged, no backend code touched this phase) | Frontend: `npm run build` green, `oxlint` clean, no source maps in `dist/`, no `console.log` in `src/` | No new migrations — Phase 6 is frontend-only
+- Phase: 7 — Testing and quality (**complete**) — Milestone 4 (Phases 6-9) in progress.
+- Last session: S7.5 (JaCoCo coverage report + final P-AUDIT)
+- Build: backend `mvn clean verify` green — 90/90 tests (unit + Testcontainers integration), Spotless clean (verified offline, no JaCoCo in the tree — see blockers) | Frontend `npm run build` green, `oxlint` clean, `npm test` — 16/16 Vitest+RTL tests green | No new migrations — Phase 7 added zero production code, tests only
 - Working branch: main (personal fork repo only; no central-repo remote configured yet — see ADR-006)
-- Next session: S7.1 — Service unit tests (JUnit 5 + Mockito)
-- Open blockers: ERD PNG export is still a manual dbdiagram.io step. S9.1 (central-repo push) remains blocked pending mentor push/branch instructions (ADR-006). Swagger-disabled-in-prod and Neon/Upstash settings remain unverified against real prod infra (Phase 8). **New this phase:** six frontend/backend surface gaps found while building the UI against the real API (forgot/reset password, favorite-toggle write, trash deletion-date field, admin alert-dismiss, admin all-devices, admin last-login — all documented in ADR-034, none faked in the UI). **Also found:** a real backend bug — an admin-imposed account lock on a user with no prior failed login attempts is silently auto-cleared on that user's next login, because `CustomUserDetailsService`'s auto-unlock heuristic (P5.5) can't distinguish an admin lock from a stale brute-force lock (ADR-035, not fixed — out of scope for a frontend-only phase, flagged for a future backend session).
-- Commit cadence: **one commit per phase**, not per session (ADR-008) — Phase 6's eight sessions land in a single commit
-- Full phase/milestone tracker: `docs/roadmap.md` (40/53 sessions done, Milestone 1 complete, Phase 2-4 complete, Milestone 2 complete, Phase 5 complete, **Phase 6 complete**)
+- Next session: S8.1 — Containerisation (backend + frontend Dockerfiles, docker-compose)
+- Open blockers: ERD PNG export is still a manual dbdiagram.io step. S9.1 (central-repo push) remains blocked pending mentor push/branch instructions (ADR-006). Swagger-disabled-in-prod and Neon/Upstash settings remain unverified against real prod infra (Phase 8). The six Phase 6 frontend/backend surface gaps (ADR-034) and the admin-lock auto-clear bug (ADR-035) remain open, unchanged this phase (Phase 7 touched no production code). **New this phase:** JaCoCo was attempted (`prepare-agent`+`report`) but never resolved — Maven Central rate-limited this environment (HTTP 429) on every plugin-resolution attempt across ~70 minutes, confirmed not a broader connectivity issue (general internet worked throughout) — and was **reverted** rather than left in `pom.xml` unverified, to keep the build genuinely green. A future session should retry once Maven Central is reachable, then add the `check` gate (ADR-038, target ~80% on the S7.1-tested service classes only) against a real measured number. Next step: `mvn clean verify` once Maven Central is reachable — see `docs/evidence/milestone-4/coverage.md`.
+- Commit cadence: **one commit per phase**, not per session (ADR-008) — Phase 7's five sessions land in a single commit
+- Full phase/milestone tracker: `docs/roadmap.md` (45/53 sessions done, Milestone 1 complete, Phase 2-4 complete, Milestone 2 complete, Phase 5 complete, Phase 6 complete, **Phase 7 complete**)
 
 ## NEXT UP
-1. S7.1 — Service unit tests (JUnit 5 + Mockito, no Spring context)
-2. S7.2 — Integration tests (Testcontainers + real PostgreSQL)
-3. S7.3 — Security test matrix (route × actor × expected status)
+1. S8.1 — Containerisation (backend + frontend Dockerfiles, full docker-compose stack)
+2. S8.2 — Managed database and cache (Neon PostgreSQL, Upstash Redis)
+3. S8.3 — Render deployment (backend web service + frontend static site)
 
 ---
 ## SESSION LOG
@@ -648,3 +648,162 @@ visible at a glance across daily/ad-hoc sessions and across AI tools.
 - No changes needed to `docs/db-design.md`/`docs/api-contract.md`/`postman/` — Phase 6 added no backend endpoints, schema, or migrations.
 **Verified:** backend `mvn clean verify` unaffected (green, unchanged); frontend `npm run build` + `oxlint` both clean at phase close.
 **Commit:** `feat(phase-6): React 18 frontend — auth, vault, sharing, dashboard, admin console (M-frontend)` (pending user approval per ADR-008 — see AskUserQuestion in this session).
+
+### S7.1 — 2026-08-12 — Service unit tests (JUnit 5 + Mockito)
+**Mentor task:** none numbered — Phase 7 continuation of quality work (master §16).
+**Done:**
+- `AesEncryptionServiceTest` — round trip; two encryptions of the same plaintext differ; wrong-
+  length key fails fast (both already existed from S1.3, unchanged).
+- `PasswordStrengthServiceImplTest`/`PasswordGeneratorServiceImplTest` — already comprehensive
+  from S3.1/S3.2; unchanged.
+- New: `UserServiceImplTest` (duplicate-email rejection, BCrypt applied, no hash leaked, async
+  welcome-email dispatched), `CredentialServiceImplTest` (ownership enforcement across owner/
+  shared/stranger, decrypt-and-compare re-encrypt-only-on-change, soft-delete/restore/permanent-
+  delete semantics, health-score formula), `CredentialShareServiceImplTest` (self-share/duplicate
+  -share rejection, owner-only share/revoke), `AccessEvaluatorImplTest` (owner/EDIT/READ/NONE
+  resolution, expired-share denial), `JwtServiceTest` (expired-token behaviour — see S7.3 below).
+- All Mockito-based, no Spring context, `should_<expected>_when_<condition>` naming, one
+  behaviour per test.
+**Files:** `backend/src/test/java/com/securevault/{user,vault,sharing,security}/*Test.java` (new),
+`docs/evidence/phase-7/s7-1-unit-tests.md`.
+**Decisions:** none new this session.
+**Verified:** `mvn test` green (90/90, combined with S7.2's integration tests below).
+**Blockers:** none.
+**Commit:** _batched — see Phase 7 close, ADR-008._
+
+### S7.2 — 2026-08-12 — Integration tests (Testcontainers + real PostgreSQL)
+**Mentor task:** none numbered — Phase 7 continuation.
+**Done:**
+- `AbstractIntegrationTest` — shared singleton Postgres 16 + Redis 7 Testcontainers,
+  `@SpringBootTest`(MOCK)+`MockMvc`, `disabledWithoutDocker = true`.
+- `VaultJourneyIntegrationTest` — full lifecycle (create→reveal→update→reuse-rejected→soft
+  delete→trash→restore→permanent delete) plus cross-user 403 isolation.
+- `VaultPaginationIntegrationTest` — 15 seeded credentials, pagination/sort/filter combined,
+  unwhitelisted-sortBy 400.
+- `SharingJourneyIntegrationTest` — full READ→EDIT→revoke permission matrix, self-share/
+  duplicate-share rejection.
+- `AuditRollbackIntegrationTest` — forced audit failure proves the credential INSERT rolls back
+  with it (P4.1 rollback guarantee, now automated instead of only manually demonstrated).
+- **Found and fixed two real test-harness bugs** (neither in application code, both documented
+  in ADR-036 and `docs/evidence/phase-7/s7-2-integration-tests.md`): the shared containers were
+  annotated `@Container`, which stopped them after the first test class finished and broke every
+  class after it; fixed with Testcontainers' singleton-container pattern. Once fixed, a second
+  bug surfaced — `VaultPaginationIntegrationTest` registered the same literal email in every
+  test method's `@BeforeEach`, now genuinely colliding since data persists across the class;
+  fixed with a random-UUID email per run.
+**Files:** `backend/src/test/java/com/securevault/integration/*.java` (new),
+`backend/pom.xml` (Testcontainers deps), `docs/decisions.md` (ADR-036),
+`docs/evidence/phase-7/s7-2-integration-tests.md`.
+**Decisions:** ADR-036 (Testcontainers singleton-container pattern over `@Container`).
+**Verified:** `mvn clean verify` — 90/90 tests green against real Postgres/Redis containers.
+Also verified the Docker-unavailable path live: with the host's Docker Desktop service stopped,
+every integration test reported `Skipped: 1`, build still green — confirmed the contingency
+plan the session prompt asked for actually works, not just compiles.
+**Blockers:** none.
+**Commit:** _batched — see Phase 7 close, ADR-008._
+
+### S7.3 — 2026-08-12 — Security test matrix
+**Mentor task:** none numbered — Phase 7 continuation.
+**Done:**
+- `scripts/security-matrix.sh` — live curl matrix against the real running backend
+  (`mvn spring-boot:run -Dspring-boot.run.profiles=local`) + real docker-compose Postgres/Redis:
+  4 fresh users (one promoted to ADMIN via direct SQL, then re-logged-in), 68 assertions across
+  10 sections (no-token 401 for 34 routes, public-endpoint sanity, malformed/tampered token 401,
+  cross-user 403, READ-share denial 403, revoked/expired share 403, admin-route 403/200,
+  logged-out-token 401 via the Redis denylist, rotated-refresh-token-reuse 401, no passwordHash
+  leak / no email-existence oracle).
+- `JwtServiceTest` (new, see S7.1) proves expired-token handling deterministically rather than a
+  live 15-minute wait — and in doing so found that `JwtService.isTokenExpired`'s own comparison
+  is unreachable for a genuinely expired token (jjwt throws `ExpiredJwtException` while parsing,
+  before that comparison runs) — harmless, matches exactly what `JwtAuthenticationFilter`
+  actually catches, documented rather than "fixed" into a different shape.
+- **Found and fixed a test-script bug** (not a backend bug): the first draft expected
+  `POST /api/auth/logout` to 401 with no token; it's deliberately `permitAll` (revokes by the
+  `refreshToken` in the body, not the access token), so a missing body correctly 400s instead.
+- `docs/evidence/security-matrix.md` + `docs/evidence/security-matrix-raw.txt` — the full table
+  and raw captured output.
+**Files:** `scripts/security-matrix.sh` (new), `backend/src/test/java/com/securevault/security/JwtServiceTest.java` (new), `docs/evidence/security-matrix.md` (new), `docs/evidence/security-matrix-raw.txt` (new), `docs/evidence/phase-7/s7-3-security-matrix.md` (new).
+**Decisions:** none new — findings documented inline in the evidence file itself.
+**Verified:** all 68 matrix rows PASS, live, real HTTP statuses. `mvn clean verify` unaffected.
+**Blockers:** none.
+**Commit:** _batched — see Phase 7 close, ADR-008._
+
+### S7.4 — 2026-08-12 — Frontend tests (Vitest + React Testing Library)
+**Mentor task:** none numbered — Phase 7 continuation.
+**Done:**
+- Added Vitest, React Testing Library, `@testing-library/user-event`, `jsdom`, MSW as frontend
+  devDependencies; `vitest.config.js` (separate from `vite.config.js`), `src/test/setup.js`
+  (jest-dom matchers, MSW server lifecycle, RTL cleanup), `src/test/server.js` (empty default MSW
+  server — every test registers exactly the handlers it needs), `src/test/renderWithProviders.jsx`
+  (fresh Redux store + `MemoryRouter` per test).
+- `LoginPage.test.jsx`, `VaultPage.test.jsx`, `CredentialFormModal.test.jsx`,
+  `StrengthMeter.test.jsx`, `ProtectedRoute.test.jsx` — 16 tests covering S7.4's exact minimum
+  list (login pending/error/MFA states; vault list rows/empty/error/search/reveal-on-click-only;
+  credential-form payload shape/validation/mocked-strength-meter/edit-blank-password; ProtectedRoute
+  redirect).
+- **Found and fixed three real test-harness bugs**, all documented inline and in
+  `docs/evidence/phase-7/s7-4-frontend-tests.md`: RTL never auto-registered its cleanup (this
+  project runs Vitest with `globals: false`) so tests within a file rendered on top of each
+  other; two concurrent `userEvent.type()` calls (`Promise.all`) interleaved keystrokes between
+  the email and password fields; MSW's relative-path handlers never matched because the real
+  `VITE_API_BASE_URL` makes axios build absolute URLs — fixed with a committed `.env.test`
+  (ADR-037).
+**Files:** `frontend/package.json` (test deps + scripts), `frontend/vitest.config.js` (new),
+`frontend/.env.test` (new), `frontend/src/test/*.js(x)` (new), 5 new `*.test.jsx` files,
+`docs/decisions.md` (ADR-037), `docs/evidence/phase-7/s7-4-frontend-tests.md`.
+**Decisions:** ADR-037 (MSW at the network boundary + `.env.test` over per-handler wildcards).
+**Verified:** `npm test` — 16/16 green. `npm run build` + `oxlint` clean afterward; no test files
+leak into `dist/`.
+**Blockers:** none.
+**Commit:** _batched — see Phase 7 close, ADR-008._
+
+### S7.5 — 2026-08-12 — Coverage (JaCoCo) and final P-AUDIT
+**Mentor task:** none numbered — Phase 7 continuation.
+**Done:**
+- Final P-AUDIT (W-4), all 15 checks, across the whole backend and a frontend-specific spot check
+  — zero HIGH/MEDIUM findings. Two grep hits initially looked like "multi-table write without
+  `@Transactional`" but are correct by design on inspection: `AuditServiceImpl.record()`
+  deliberately has no transaction boundary of its own (must run inside the caller's existing
+  `@Transactional` method, P4.1); `MfaChallengeServiceImpl` only touches Redis, which
+  `@Transactional` doesn't apply to. Full table in `docs/evidence/phase-7/s7-5-final-audit.md`.
+- Attempted `jacoco-maven-plugin` 0.8.13 (`prepare-agent` + `report`) in `backend/pom.xml`. It
+  never resolved from Maven Central — every attempt returned HTTP 429 across roughly 70 minutes
+  and more than ten direct `curl` probes (including the bare repository root, not just this one
+  artifact), while `registry.npmjs.org`/`github.com`/`google.com` all returned 200 in the same
+  window, ruling out a broader connectivity problem. **Reverted the plugin block and property**
+  rather than leave an unresolvable dependency declared in a build that had never once been
+  verified with it present — re-ran `mvn -o clean verify` immediately after reverting and
+  confirmed 90/90 tests green, Spotless clean, fully offline.
+- `docs/evidence/milestone-4/coverage.md` states plainly what is and isn't known without the
+  report — no coverage percentage in it is estimated or backfilled from reasoning about the code.
+**Files:** `backend/pom.xml` (JaCoCo added, then reverted — net no change), `docs/decisions.md`
+(ADR-038), `docs/evidence/phase-7/s7-5-final-audit.md`, `docs/evidence/milestone-4/coverage.md`.
+**Decisions:** ADR-038 (JaCoCo attempted and reverted this session; blocked on a sustained Maven
+Central rate limit — see ADR for the exact next command to actually add it).
+**Verified:** `mvn -o clean verify` — 90/90 tests green, Spotless clean, confirmed *after*
+reverting the JaCoCo change, offline, so this is the true current state of the repo, not a
+snapshot from before the attempted change. P-AUDIT findings table is real, based on live
+`grep`/inspection of the actual current source, not assumed.
+**Blockers:** JaCoCo itself — external (Maven Central rate limit), not a code issue. Next command
+in `docs/evidence/milestone-4/coverage.md`.
+**Commit:** _batched — see Phase 7 close, ADR-008._
+
+### Phase 7 close — docs, ADRs, roadmap/progress update
+**Done:**
+- `docs/decisions.md` — ADR-036 (Testcontainers singleton-container pattern, found live, fixed),
+  ADR-037 (MSW at the network boundary + `.env.test` over per-handler wildcards), ADR-038
+  (JaCoCo added report-only; enforcement gate honestly blocked on Maven Central, not guessed).
+- `docs/guide.md` — new "Testing" section (backend + frontend run commands, Docker-availability
+  note, coverage-report location), two new troubleshooting entries (Docker-unreachable
+  integration tests, Maven Central 429s).
+- `docs/roadmap.md` — S7.1-S7.5 ticked (S7.5 marked partial with an inline note); progress line →
+  45/53, **Phase 7 complete**.
+- `docs/progress.md` — this file: CURRENT STATE rewritten, S7.1-S7.5 session log entries
+  appended, NEXT UP → S8.1-S8.3.
+- No changes needed to `docs/db-design.md`/`docs/api-contract.md`/`postman/` — Phase 7 added no
+  backend endpoints, schema, migrations, or API-contract changes; it is tests and CI-adjacent
+  tooling only.
+**Verified:** backend `mvn clean verify` — 90/90 tests, Spotless clean (captured before the
+JaCoCo-resolution rate limit started blocking fresh plugin downloads). Frontend `npm run build` +
+`npx oxlint src/` + `npm test` (16/16) all clean at phase close.
+**Commit:** pending user approval per ADR-008.
