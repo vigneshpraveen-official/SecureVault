@@ -1072,3 +1072,29 @@ histories by design — this is not a bug to fix. Any future push to `origin` mu
 README-only branch, never `git push origin main`. Revisit alongside ADR-006 once the mentor gives
 central-repo submission instructions (S9.1), since submission likely requires the full codebase
 to reach a repo somewhere (even if not this fork's `main`).
+
+### ADR-040 — Reversed: full local history (Phases 1–7) pushed to the GitHub fork, supersedes ADR-039
+**Date:** 2026-08-15 · **Status:** accepted, supersedes ADR-039
+**Context:** Minutes after ADR-039 was recorded, the developer committed the new `README.md`
+locally and attempted `git push origin main` directly, which was rejected (non-fast-forward —
+local `main` and `origin/main` are unrelated histories per ADR-039). Asked explicitly whether to
+fix this by publishing README-only (per ADR-039) or by pushing the full codebase — including the
+AI-tooling files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `docs/ai/`,
+`docs/securevault_prompts.md`) becoming publicly visible — the developer chose the latter: "push
+all my changes... from phase 1 to now i didn't pushed to my repo single time."
+**Decision:** `origin/main` (the fork) now becomes the real remote for local `main`'s full
+history — Phases 1 through 7, all docs, evidence, and AI-tooling files included. Reconciled via
+`git merge origin/main --allow-unrelated-histories`, keeping the local (fuller) `README.md` over
+origin's one-line placeholder and keeping origin's `LICENSE` (no local equivalent existed), then
+a normal (non-force) `git push origin main`. ADR-039's README-only publishing plan is superseded;
+the `.gitignore` section it added (for `CLAUDE.md`/`AGENTS.md`/`GEMINI.md`/`docs/ai/`/
+`docs/securevault_prompts.md`) is removed since those files are now intentionally public.
+**Alternatives:** Force-push local `main` over `origin/main` (rejected — discards `origin/main`'s
+existing `LICENSE`/history for no benefit when a clean non-force merge achieves the same end
+state); keep ADR-039's README-only split and only ever push the separate branch (rejected — not
+what the developer wants; the fork should reflect completed work).
+**Consequences:** `origin/main` and local `main` are the same branch again going forward — normal
+`git push origin main` after each phase commit. AI-tooling files are now part of the public
+history permanently (git history is not rewritten to remove them). ADR-006's "fork-only, no
+central remote yet" stance is unaffected — this only changes what's *visible on* the fork, not
+which remote is used.
