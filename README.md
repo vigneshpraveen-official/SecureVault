@@ -42,10 +42,6 @@ SecureVault lets a user register, authenticate with JWT + MFA (TOTP), store cred
 
 Built in phases against a defined roadmap (auth/vault core, API hardening, password intelligence, data integrity & performance, sharing/sessions/platform hardening, React frontend, testing & quality). Backend and frontend test suites are green; containerization and cloud deployment are in progress.
 
-## About this repository
-
-This repository publishes only project documentation (this README and the license). The full source code, architecture docs, and development history are maintained in a local/private workspace as part of an ongoing internship submission process.
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
