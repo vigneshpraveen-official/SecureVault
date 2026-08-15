@@ -45,3 +45,11 @@ build/
 /All Tasks.txt
 /Java_Password Vault & Credential Management System.pdf
 /WORKSPACE_INSTRUCTIONS.md
+
+# --- AI workspace / agent instruction files (local-only per ADR-041; purged from git history,
+# never re-tracked or pushed to GitHub) ---
+/CLAUDE.md
+/AGENTS.md
+/GEMINI.md
+/docs/ai/
+/docs/securevault_prompts.md

@@ -1098,3 +1098,37 @@ what the developer wants; the fork should reflect completed work).
 history permanently (git history is not rewritten to remove them). ADR-006's "fork-only, no
 central remote yet" stance is unaffected — this only changes what's *visible on* the fork, not
 which remote is used.
+
+### ADR-041 — Final: AI-tooling files purged from git history entirely, kept on disk untracked, supersedes ADR-040
+**Date:** 2026-08-15 · **Status:** accepted, supersedes ADR-040
+**Context:** After ADR-040's push, the developer saw `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, and
+`docs/ai/` live on the public GitHub fork and objected strongly — this was not actually wanted;
+the earlier "push everything" answer had not been weighed against seeing it live. The developer
+asked for an immediate, permanent fix: these files must not be visible on GitHub, in the current
+tree or anywhere in history.
+**Decision:** Used `git filter-repo --invert-paths` to strip `CLAUDE.md`, `AGENTS.md`,
+`GEMINI.md`, `docs/ai/`, and `docs/securevault_prompts.md` from **every** commit in local history
+(all 15 commits rewritten, all tags remapped to new hashes). This also removed the files from the
+working tree (filter-repo rewrites the checkout to match the new history) — they were recovered
+byte-for-byte from `origin/main` (still untouched at that point, pre-force-push) and restored to
+disk as **untracked** files. `.gitignore` re-gained the exclusion list from ADR-039 (this time
+pointing at ADR-041) so `git add -A`/`git add .` can never re-stage them. The rewritten history
+must be force-pushed to `origin/main` to actually remove these files from GitHub (a plain push
+would be rejected as non-fast-forward, and is unavoidable here — this is the one legitimate case
+for it). `phase-2`..`phase-7`/`milestone-1`/`milestone-2` tags were remapped by filter-repo and
+must be force-pushed too (`git push origin --tags --force`) or they'll still point at
+now-unreachable pre-purge commits on the remote.
+**Alternatives:** Only delete the files in a new commit going forward (rejected — the developer's
+explicit objection was to their being *visible at all*, including in old commits' file browser,
+which a forward-only delete does not fix); keep them git-tracked but gitignored-for-future-adds
+only, per ADR-039's original approach (rejected — that was already tried and then overridden by
+ADR-040; the developer now wants disk presence without any git tracking, ever).
+**Consequences:** Local `main` and `origin/main` (once force-pushed) permanently diverge from the
+pre-purge commit hashes — this is expected and irreversible; anyone who already cloned/forked the
+exposed state (unlikely — the exposure window was roughly 15–20 minutes on a solo personal fork)
+would still have the old blobs locally. `CLAUDE.md`/`AGENTS.md`/`GEMINI.md`/`docs/ai/`/
+`docs/securevault_prompts.md` now exist **only on disk**, never in git, on any branch, past or
+future — anyone regenerating this workspace from a fresh clone of the fork will not get them and
+must be given them out-of-band. The `backup-before-ai-purge-20260815` branch created just before
+the rewrite was itself rewritten by `filter-repo` (it processes all refs, not just `main`) and is
+therefore identical to `main`, not a real backup — deleted as dead weight.
