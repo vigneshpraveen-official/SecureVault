@@ -45,3 +45,17 @@ build/
 /All Tasks.txt
 /Java_Password Vault & Credential Management System.pdf
 /WORKSPACE_INSTRUCTIONS.md
+
+# --- AI workspace / agent architecture (local-only per ADR-010; never pushed to GitHub) ---
+# NOTE: CLAUDE.md, AGENTS.md, GEMINI.md, docs/ai/, and docs/securevault_prompts.md are
+# already tracked in local git history (see ADR-010) and are NOT untracked by these entries —
+# git ignores .gitignore for paths it already tracks. These patterns exist to (a) stop any
+# *new* AI-tooling file from being picked up by a future `git add -A`, and (b) document what
+# must be excluded if this repo is ever cloned fresh or these files are untracked later.
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+docs/ai/
+docs/securevault_prompts.md
+.mcp.json
+*.session.json

@@ -1040,3 +1040,35 @@ line-coverage percentages from `target/site/jacoco/index.html` for the eight cla
 then add a `check` execution bound to `verify` with `<includes>` scoped to exactly those eight
 classes and a threshold at or just below the measured number — never above
 it. `docs/progress.md`'s Open blockers list carries this forward explicitly so it isn't lost.
+
+### ADR-039 — GitHub fork publishes README-only; full codebase stays local-only
+**Date:** 2026-08-15 · **Status:** accepted, supersedes the publishing scope implied by ADR-006
+**Context:** The developer's fork (`github.com/vigneshpraveen-official/SecureVault`, the sole
+configured remote per ADR-006) was created via GitHub with an auto-generated `LICENSE` +
+one-line `README.md` ("Initial commit") and has never received a push from local `main` — local
+`main` is 11 commits ahead with unrelated history. The developer asked to (a) audit the repo for
+files tied to the AI-agent tooling/workspace used to build this project — `CLAUDE.md`,
+`AGENTS.md`, `GEMINI.md`, `docs/ai/CONTEXT.md`, `docs/ai/CONVENTIONS.md`,
+`docs/securevault_prompts.md` (all currently git-tracked locally), plus the already-gitignored
+`.claude/`, `00_initial_claude_code_prompt.md`, `All Tasks.txt` — and (b) ensure none of that, nor
+any other project file, ever reaches the public GitHub remote; only a filled-in `README.md`
+should be publicly visible there.
+**Decision:** Local `main` keeps full history and stays git-tracked exactly as it is today
+(backend, frontend, docs, evidence, AI-tooling files included) — nothing is untracked or removed
+locally. The GitHub remote (`origin`) is treated as publishing only `README.md` (and the existing
+`LICENSE`), updated via a separate branch built directly on `origin/main`'s own history (not by
+pushing local `main`), so local development history and the AI-tooling files never leave the
+machine. `.gitignore` gained a documented, non-destructive section listing the AI-tooling files —
+it cannot untrack what's already tracked, but it stops any *new* AI-tooling file from being swept
+into a future `git add -A` on any branch, public or local.
+**Alternatives:** Untrack the AI files / full codebase from git entirely, even locally (rejected —
+developer explicitly wants full local version history preserved for development, only the public
+remote should be minimal); force-push local `main` over `origin/main`'s unrelated history to make
+GitHub match local exactly, then rely on `.gitignore` alone to keep files out of future commits
+(rejected — force-pushing discards `origin/main`'s existing history for no benefit and still
+wouldn't retroactively remove anything, since nothing has been pushed yet).
+**Consequences:** `origin/main` and local `main` remain permanently divergent, unrelated
+histories by design — this is not a bug to fix. Any future push to `origin` must go through the
+README-only branch, never `git push origin main`. Revisit alongside ADR-006 once the mentor gives
+central-repo submission instructions (S9.1), since submission likely requires the full codebase
+to reach a repo somewhere (even if not this fork's `main`).
